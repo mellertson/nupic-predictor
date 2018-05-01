@@ -151,10 +151,14 @@ modelParams:
     globalDecay: 0.0
     maxSynapsesPerSegment: 32
     maxSegmentsPerCell: 128
-    minThreshold: 12
-    activationThreshold: 16
-    outputType: normal
+    minThreshold: 16
+    activationThreshold: 25
+    outputType: activeState # normal
     pamLength: 1
+    # Mike's custom configs
+    burnIn: 5
+    maxInfBacktrack: 20
+    maxLrnBacktrack: 10
 
   # Classifier parameters. For detailed descriptions of each parameter, see
   # the API docs for nupic.algorithms.sdr_classifier.SDRClassifier.
@@ -162,7 +166,7 @@ modelParams:
     verbosity: 0
     regionName: SDRClassifierRegion
     alpha: 0.1
-    steps: '1,5'
+    steps: '1'
     maxCategoryCount: 1000
     implementation: cpp
 

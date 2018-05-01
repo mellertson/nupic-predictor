@@ -91,17 +91,19 @@ def get_start_dates(start_dt, data_points, time_units):
   return dates
 
 
-def get_data(start_dt, time_unit):
+def get_data(start_dt, data_points, time_unit):
   """
   :param start_dt:
   :type start_dt: datetime
+  :param data_points:
+  :type data_points: int
   :param time_unit: '1m' | '5m' | '1h' | '1d'
   :type time_unit: str
   :return:
   """
   # local variables
   fmt = "%Y-%m-%dT%H:%M:%S.000Z"
-  dates = get_start_dates(start_dt=start_dt)
+  dates = get_start_dates(start_dt=start_dt, data_points=data_points, time_units=time_unit)
 
   # initialize the CSV file
   initialize_csv()
@@ -271,7 +273,7 @@ def runHotgym(start_date):
   global bigger
   global smaller
 
-  get_data(start_dt=start_date, time_unit=CANDLESTICK_SIZE)
+  get_data(start_dt=start_date, data_points=DATA_POINTS, time_unit=CANDLESTICK_SIZE)
   last_actual = 0.0
   last_prediction = 0.0
   all_results = []
@@ -343,8 +345,8 @@ def runHotgym(start_date):
       # print out results
       row = '{}'.format(iteration + 1).rjust(row_col_len, ' ')
       msg = "Row {}:\t\t{}\t\t".format(row, timestamps[iteration])
-      msg += "spread: {:.8f} {:11.4f}% {}\t\t".format(actual, actual_change, actual_dir)
-      msg += "predicted: {:.8f} {:11.4f}% {}\t\t".format(prediction, predicted_change, predicted_dir)
+      msg += "spread:{:11.8f} {:12.4f}% {}\t\t".format(actual, actual_change, actual_dir)
+      msg += "predicted:{:11.8f} {:12.4f}% {}\t\t".format(prediction, predicted_change, predicted_dir)
       msg += "{}\t\t".format(correct)
       msg += "score: {:.2f}%\t\t".format(score)
       # msg += "error: {:8.4f}%\t\t".format(avg_pct_error)
@@ -362,8 +364,8 @@ def runHotgym(start_date):
 # Input variables into the system
 MARKET = 'XBTM18'
 MARKET2 = 'XBTUSD'
-CANDLESTICK_SIZE = '1d' # 1m = 1 minute, 5m = 5 minutes
-DATA_POINTS = 10000
+CANDLESTICK_SIZE = '5m' # 1m = 1 minute, 5m = 5 minutes
+DATA_POINTS = 3000
 END_DATE = datetime.utcnow()
 START_DATE = calculate_start_date(end_date=END_DATE, data_points=DATA_POINTS, time_units=CANDLESTICK_SIZE)
 INPUT_FILENAME = '{}.csv'.format(MARKET.lower())
