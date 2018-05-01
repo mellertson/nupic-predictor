@@ -3,6 +3,7 @@ import json
 import os
 import yaml
 import requests
+from time import sleep
 from dateutil import parser
 from datetime import datetime, timedelta
 from nupic.engine import Network
@@ -62,26 +63,28 @@ def initialize_csv():
     f.writelines(lines)
 
 
-# def get_time_units(time_units):
-#   """
-#   :param time_units: '1m' | '5m' | '1h' | '1d'
-#   :type time_units: str
-#   :returns: 'm' | 'h' \ 'd'
-#   :rtype: timedelta
-#   """
-#   m1_ptn = re.compile(r'^1m$')
-#   m5_ptn = re.compile(r'^5m$')
-#   h_ptn = re.compile(r'^1h$')
-#   d_ptn = re.compile(r'^1d$')
-#   if m1_ptn.search(time_units):
-#     return timedelta(minutes=1)
-#   elif h_ptn.search(time_units):
-#     return timedelta(minutes=5)
-#   elif d_ptn.search(time_units):
-#     return timedelta
-#   else:
-#     raise ValueError("{} is an invalid value".format(time_units))
-#
+def add_time(time_units):
+  """
+  :param time_units: '1m' | '5m' | '1h' | '1d'
+  :type time_units: str
+  :returns: 'm' | 'h' \ 'd'
+  :rtype: timedelta
+  """
+  m1_ptn = re.compile(r'^1m$')
+  m5_ptn = re.compile(r'^5m$')
+  h_ptn = re.compile(r'^1h$')
+  d_ptn = re.compile(r'^1d$')
+  if m1_ptn.search(time_units):
+    return timedelta(minutes=1)
+  elif m5_ptn.search(time_units):
+    return timedelta(minutes=5)
+  elif h_ptn.search(time_units):
+    return timedelta(hours=1)
+  elif d_ptn.search(time_units):
+    return timedelta(days=1)
+  else:
+    raise ValueError("{} is an invalid value".format(time_units))
+
 
 def get_start_dates(start_dt):
   """
@@ -90,11 +93,11 @@ def get_start_dates(start_dt):
   :rtype: list
   """
   dates = [start_dt]
-  time_units = get_time_units(_CANDLESTICK_SIZE)
+  td = add_time(_CANDLESTICK_SIZE) * 500
   blocks = int(_DATA_POINTS / 500.0)
-  for i in range(blocks):
-    next_dt = start_dt + timedelta()
-
+  for i in range(blocks - 1):
+    dates.append(start_dt + td * (i+1))
+  return dates
 
 
 def get_data(start_dt):
@@ -103,32 +106,36 @@ def get_data(start_dt):
   :type start_dt: datetime
   :return:
   """
+  # local variables
   format = "%Y-%m-%dT%H:%M:%S.000Z"
-  start = start_dt.strftime(format).replace(":", "%3A")
-  url = 'https://www.bitmex.com/api/v1/quote/bucketed?binSize=1m&partial=false&symbol={}&count=500&reverse=false&startTime={}'.format(market, start)
-  # url = 'https://www.bitmex.com/api/v1/quote/bucketed?binSize=1m&partial=false&symbol={}&count=500&reverse=false&startTime=2018-04-01T20%3A20%3A00.000Z'.format(market)
-  response = requests.get(url)
-  data = json.loads(response.content.decode('utf-8'))
+  dates = get_start_dates(start_dt=start_dt)
 
-  lines = []
-  # write the headers
-  lines.append('timestamp, consumption\n')
-  lines.append('datetime, float\n')
-  lines.append('T, \n')
+  # initialize the CSV file
+  initialize_csv()
 
-  # write the lines of data
-  actuals.append(0.0)
-  for i in range(len(data)):
-    timestamp = parser.parse(data[i]['timestamp'])
-    bid_price = float(data[i]['bidPrice'])
-    ask_price = float(data[i]['askPrice'])
-    spread_pct_diff = (ask_price - bid_price) / ask_price * 100
-    actuals.append(spread_pct_diff)
-    lines.append('{}, {:.15}\n'.format(timestamp.strftime("%Y-%m-%d %H:%M:%S.%f"), spread_pct_diff))
+  for start in dates:
+    start = start.strftime(format).replace(":", "%3A")
+    url = 'https://www.bitmex.com/api/v1/quote/bucketed?binSize=1m&partial=false&symbol={}&count=500&reverse=false&startTime={}'.format(market, start)
+    response = requests.get(url)
+    data = json.loads(response.content.decode('utf-8'))
 
-  # save the data to a .csv file
-  with open(os.path.join(_EXAMPLE_DIR, 'gymdata.csv'), 'w') as f:
-    f.writelines(lines)
+    # write the lines of data
+    lines = []
+    actuals.append(0.0)
+    for i in range(len(data)):
+      timestamp = parser.parse(data[i]['timestamp'])
+      bid_price = float(data[i]['bidPrice'])
+      ask_price = float(data[i]['askPrice'])
+      spread_pct_diff = (ask_price - bid_price) / ask_price * 100
+      actuals.append(spread_pct_diff)
+      lines.append('{}, {:.15}\n'.format(timestamp.strftime("%Y-%m-%d %H:%M:%S.%f"), spread_pct_diff))
+
+    # save the data to a .csv file
+    with open(_INPUT_FILE_PATH, 'a+') as f:
+      f.writelines(lines)
+
+    # sleep so we don't hit Bitmex's rate limit
+    sleep(2)
 
 
 def createDataOutLink(network, sensorRegionName, regionName):
