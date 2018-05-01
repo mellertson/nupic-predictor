@@ -365,7 +365,7 @@ def runHotgym(start_date):
 MARKET = 'XBTM18'
 MARKET2 = 'XBTUSD'
 CANDLESTICK_SIZE = '5m' # 1m = 1 minute, 5m = 5 minutes
-DATA_POINTS = 3000
+DATA_POINTS = 10000
 END_DATE = datetime.utcnow()
 START_DATE = calculate_start_date(end_date=END_DATE, data_points=DATA_POINTS, time_units=CANDLESTICK_SIZE)
 INPUT_FILENAME = '{}.csv'.format(MARKET.lower())

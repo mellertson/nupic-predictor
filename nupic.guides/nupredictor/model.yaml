@@ -145,7 +145,7 @@ modelParams:
     temporalImp: cpp
     newSynapseCount: 20
     initialPerm: 0.21
-    permanenceInc: 0.1
+    permanenceInc: 0.15
     permanenceDec: 0.1
     maxAge: 0
     globalDecay: 0.0
@@ -156,9 +156,10 @@ modelParams:
     outputType: activeState # normal
     pamLength: 1
     # Mike's custom configs
-    burnIn: 5
+    burnIn: 2
     maxInfBacktrack: 20
     maxLrnBacktrack: 10
+    permanenceMax: 0.9
 
   # Classifier parameters. For detailed descriptions of each parameter, see
   # the API docs for nupic.algorithms.sdr_classifier.SDRClassifier.
