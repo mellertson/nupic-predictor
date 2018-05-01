@@ -11,20 +11,7 @@ from nupic.encoders import MultiEncoder
 from nupic.data.file_record_stream import FileRecordStream
 
 
-# Input variables into the system
-_START_DATE = parser.parse("01/01/2018 12:00:00")
-_CANDLESTICK_SIZE = '1m' # 1m = 1 minute, 5m = 5 minutes
-_DATA_POINTS = 3000
-
-
-# Constants
-_EXAMPLE_DIR = os.path.dirname(os.path.abspath(__file__))
-_INPUT_FILE_PATH = os.path.join(_EXAMPLE_DIR, "gymdata.csv")
-_PARAMS_PATH = os.path.join(_EXAMPLE_DIR, "model.yaml")
-actuals = []
-
-
-class bcolors:
+class bcolors(object):
   HEADER = '\033[95m'
   OKBLUE = '\033[94m'
   OKGREEN = '\033[92m'
@@ -35,8 +22,23 @@ class bcolors:
   UNDERLINE = '\033[4m'
 
 
-# the market being predicted
-market = 'XBTUSD'
+# Input variables into the system
+MARKET = 'XBTUSD'
+START_DATE = parser.parse("01/01/2018 12:00:00")
+CANDLESTICK_SIZE = '1m' # 1m = 1 minute, 5m = 5 minutes
+DATA_POINTS = 1000
+INPUT_FILENAME = '{}.csv'.format(MARKET)
+OUTPUT_FILENAME = '{}-results.txt'.format(MARKET)
+
+# Constants
+EXAMPLE_DIR = os.path.dirname(os.path.abspath(__file__))
+INPUT_FILE_PATH = os.path.join(EXAMPLE_DIR, INPUT_FILENAME)
+OUTPUT_FILE_PATH = os.path.join(EXAMPLE_DIR, OUTPUT_FILENAME)
+PARAMS_PATH = os.path.join(EXAMPLE_DIR, "model.yaml")
+
+# Output variables
+actuals = [0.0]
+timestamps = []
 
 # unicode characters
 up_char = unichr(8593).encode('utf-8')
@@ -53,13 +55,13 @@ wrong = '{}{}{} Wrong {}'.format(bcolors.BOLD, bcolors.FAIL, wrong_char, bcolors
 
 def initialize_csv():
   # write the headers
-  lines = []
+  lines = list()
   lines.append('timestamp, consumption\n')
   lines.append('datetime, float\n')
   lines.append('T, \n')
 
   # save the data to a .csv file
-  with open(os.path.join(_EXAMPLE_DIR, 'gymdata.csv'), 'w') as f:
+  with open(INPUT_FILE_PATH, 'w') as f:
     f.writelines(lines)
 
 
@@ -93,8 +95,8 @@ def get_start_dates(start_dt):
   :rtype: list
   """
   dates = [start_dt]
-  td = add_time(_CANDLESTICK_SIZE) * 500
-  blocks = int(_DATA_POINTS / 500.0)
+  td = add_time(CANDLESTICK_SIZE) * 500
+  blocks = int(DATA_POINTS / 500.0)
   for i in range(blocks - 1):
     dates.append(start_dt + td * (i+1))
   return dates
@@ -107,23 +109,23 @@ def get_data(start_dt):
   :return:
   """
   # local variables
-  format = "%Y-%m-%dT%H:%M:%S.000Z"
+  fmt = "%Y-%m-%dT%H:%M:%S.000Z"
   dates = get_start_dates(start_dt=start_dt)
 
   # initialize the CSV file
   initialize_csv()
 
   for start in dates:
-    start = start.strftime(format).replace(":", "%3A")
-    url = 'https://www.bitmex.com/api/v1/quote/bucketed?binSize=1m&partial=false&symbol={}&count=500&reverse=false&startTime={}'.format(market, start)
+    start = start.strftime(fmt).replace(":", "%3A")
+    url = 'https://www.bitmex.com/api/v1/quote/bucketed?binSize=1m&partial=false&symbol={}&count=500&reverse=false&startTime={}'.format(MARKET, start)
     response = requests.get(url)
     data = json.loads(response.content.decode('utf-8'))
 
     # write the lines of data
     lines = []
-    actuals.append(0.0)
     for i in range(len(data)):
       timestamp = parser.parse(data[i]['timestamp'])
+      timestamps.append(timestamp)
       bid_price = float(data[i]['bidPrice'])
       ask_price = float(data[i]['askPrice'])
       spread_pct_diff = (ask_price - bid_price) / ask_price * 100
@@ -131,7 +133,7 @@ def get_data(start_dt):
       lines.append('{}, {:.15}\n'.format(timestamp.strftime("%Y-%m-%d %H:%M:%S.%f"), spread_pct_diff))
 
     # save the data to a .csv file
-    with open(_INPUT_FILE_PATH, 'a+') as f:
+    with open(INPUT_FILE_PATH, 'a+') as f:
       f.writelines(lines)
 
     # sleep so we don't hit Bitmex's rate limit
@@ -175,7 +177,7 @@ def createEncoder(encoderParams):
 
 def createNetwork(dataSource):
   """Create and initialize a network."""
-  with open(_PARAMS_PATH, "r") as f:
+  with open(PARAMS_PATH, "r") as f:
     modelParams = yaml.safe_load(f)["modelParams"]
 
   # Create a network that will hold the regions
@@ -273,14 +275,15 @@ def runHotgym(start_date):
   global up
   global down
 
-  get_data()
+  get_data(start_date)
   last_actual = 0.0
   last_prediction = 0.0
   all_results = []
   scores = []
+  row_col_len = len(str(DATA_POINTS))
 
   # Create a data source for the network.
-  dataSource = FileRecordStream(streamID=_INPUT_FILE_PATH)
+  dataSource = FileRecordStream(streamID=INPUT_FILE_PATH)
   numRecords = dataSource.getDataRowCount()
   network = createNetwork(dataSource)
 
@@ -297,60 +300,68 @@ def runHotgym(start_date):
   network.regions["TM"].setParameter("inferenceMode", 1)
   network.regions["classifier"].setParameter("inferenceMode", 1)
 
-  results = []
-  N = 1  # Run the network, N iterations at a time.
-  for iteration in range(0, numRecords, N):
-    actual = actuals[iteration]
+  with open(OUTPUT_FILE_PATH, 'w+') as out_file:
+    # output results file header
+    header = 'Nupic Predicting {} Order Book Spread on Bitmex\n\n'.format(MARKET)
+    out_file.write(header)
+    print(header)
+    N = 1  # Run the network, N iterations at a time.
+    for iteration in range(0, numRecords, N):
+      actual = actuals[iteration]
 
-    # make predictions
-    network.run(N)
+      # make predictions
+      network.run(N)
 
-    # extract the prediction
-    predictionResults = getPredictionResults(network, "classifier")
-    prediction = predictionResults[1]["predictedValue"]
-    oneStepConfidence = predictionResults[1]["predictionConfidence"]
+      # extract the prediction
+      predictionResults = getPredictionResults(network, "classifier")
+      prediction = predictionResults[1]["predictedValue"]
+      oneStepConfidence = predictionResults[1]["predictionConfidence"]
 
-    # calculate stats on the prediction VS actual
-    error = (actual - prediction) / actual * 100 if abs(actual) > 0 else 0.0
-    actual_change = (actual - last_actual) / actual * 100 if abs(actual) > 0 else 0.0
-    predicted_change = (prediction - last_prediction) / prediction * 100 if iteration > 0 else 0.0
+      # calculate stats on the prediction VS actual
+      error = (actual - prediction) / actual * 100 if abs(actual) > 0 else 0.0
+      actual_change = (actual - last_actual) / actual * 100 if abs(actual) > 0 else 0.0
+      predicted_change = (prediction - last_prediction) / prediction * 100 if iteration > 0 else 0.0
 
-    # calculate the actual VS predicted directional movement
-    if iteration > 0:
-      actual_dir = '{}'.format(up) if actual_change > 0 else '{}'.format(down)
-      predicted_dir = '{}'.format(up) if predicted_change > 0 else '{}'.format(down)
-      correct = '{}'.format(right) if actual_dir == predicted_dir else '{}'.format(wrong)
-    else:
-      correct = predicted_dir = actual_dir = '          '
+      # calculate the actual VS predicted directional movement
+      if iteration > 0:
+        actual_dir = '{}'.format(up) if actual_change > 0 else '{}'.format(down)
+        predicted_dir = '{}'.format(up) if predicted_change > 0 else '{}'.format(down)
+        correct = '{}'.format(right) if actual_dir == predicted_dir else '{}'.format(wrong)
+      else:
+        correct = predicted_dir = actual_dir = '          '
 
-    # store the actual and prediction
-    all_results.append({'actual': actual, 'prediction': prediction, 'error': error})
-    scores.append(1.0 if correct == right else 0.0)
+      # store the actual and prediction
+      all_results.append({'actual': actual, 'prediction': prediction, 'error': error})
+      scores.append(1.0 if correct == right else 0.0)
 
-    # calculate the average percent error of the prediction
-    avg_pct_error = 0.0
-    for r in all_results:
-      _error = r['error']
-      avg_pct_error += _error
-    avg_pct_error = avg_pct_error / len(all_results)
+      # calculate the average percent error of the prediction
+      avg_pct_error = 0.0
+      for r in all_results:
+        _error = r['error']
+        avg_pct_error += _error
+      avg_pct_error = avg_pct_error / len(all_results)
 
-    # calculate the current score
-    score = sum(scores) / len(scores) * 100
+      # calculate the current score
+      score = sum(scores) / len(scores) * 100
 
-    # print out results
-    msg = "{}: {:3}\t\t".format(iteration + 1)
-    msg += "spread: {:.8f} {:8.4f}% {}\t\t".format(actual, actual_change, actual_dir)
-    msg += "predicted: {:.8f} {:8.4f}% {}\t\t".format(prediction, predicted_change, predicted_dir)
-    msg += "{}\t\t".format(correct)
-    msg += "score: {:.2f}%\t\t".format(score)
-    msg += "error: {:8.4f}%\t\t".format(avg_pct_error)
-    # msg += "confidence: {:8.4f}%\t\t".format(oneStepConfidence * 100)
-    print(msg)
+      # print out results
+      row = '{}'.format(iteration + 1).rjust(row_col_len, ' ')
+      msg = "Row {}:\t\t{}\t\t".format(row, timestamps[iteration])
+      msg += "spread: {:.8f} {:8.4f}% {}\t\t".format(actual, actual_change, actual_dir)
+      msg += "predicted: {:.8f} {:8.4f}% {}\t\t".format(prediction, predicted_change, predicted_dir)
+      msg += "{}\t\t".format(correct)
+      msg += "score: {:.2f}%\t\t".format(score)
+      msg += "error: {:8.4f}%\t\t".format(avg_pct_error)
+      # msg += "confidence: {:8.4f}%\t\t".format(oneStepConfidence * 100)
+      print(msg)
 
-    # store values for next iteration
-    last_actual = actual
-    last_prediction = prediction
+      # Write results to output file
+      out_file.write(msg + '\n')
+
+      # store values for next iteration
+      last_actual = actual
+      last_prediction = prediction
 
 
 if __name__ == "__main__":
-  runHotgym(_START_DATE)
+  runHotgym(START_DATE)

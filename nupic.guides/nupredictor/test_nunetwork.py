@@ -46,7 +46,7 @@ class Predictor_Functions(TestCase):
   def test_get_data(self):
     # inputs
     start = self.start
-    filename = _INPUT_FILE_PATH
+    filename = INPUT_FILE_PATH
 
     # expected outputs
     line_count = 3003
