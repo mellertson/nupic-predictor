@@ -22,35 +22,20 @@ class bcolors(object):
   UNDERLINE = '\033[4m'
 
 
-# Input variables into the system
-MARKET = 'XBTUSD'
-START_DATE = parser.parse("01/01/2018 12:00:00")
-CANDLESTICK_SIZE = '1m' # 1m = 1 minute, 5m = 5 minutes
-DATA_POINTS = 1000
-INPUT_FILENAME = '{}.csv'.format(MARKET)
-OUTPUT_FILENAME = '{}-results.txt'.format(MARKET)
+def calculate_start_date(end_date, data_points, time_units):
+  """
 
-# Constants
-EXAMPLE_DIR = os.path.dirname(os.path.abspath(__file__))
-INPUT_FILE_PATH = os.path.join(EXAMPLE_DIR, INPUT_FILENAME)
-OUTPUT_FILE_PATH = os.path.join(EXAMPLE_DIR, OUTPUT_FILENAME)
-PARAMS_PATH = os.path.join(EXAMPLE_DIR, "model.yaml")
-
-# Output variables
-actuals = [0.0]
-timestamps = []
-
-# unicode characters
-up_char = unichr(8593).encode('utf-8')
-down_char = unichr(8595).encode('utf-8')
-right_char = unichr(10003).encode('utf-8')
-wrong_char = unichr(215).encode('utf-8')
-
-# colored messages
-up =   '{}{}{} Up   {}'.format(bcolors.BOLD, bcolors.OKBLUE, up_char, bcolors.ENDC)
-down = '{}{}{} Down {}'.format(bcolors.BOLD, bcolors.FAIL, down_char, bcolors.ENDC)
-right = '{}{}{} Right {}'.format(bcolors.BOLD, bcolors.OKBLUE, right_char, bcolors.ENDC)
-wrong = '{}{}{} Wrong {}'.format(bcolors.BOLD, bcolors.FAIL, wrong_char, bcolors.ENDC)
+  :param end_date:
+  :type end_date: datetime
+  :param data_points:
+  :type data_points: int
+  :param time_units: '1m' | '5m' | '1h' | '1d'
+  :type time_units: str
+  :return:
+  """
+  td = add_time(time_units=time_units)
+  start_date = end_date - (td * data_points)
+  return start_date
 
 
 def initialize_csv():
@@ -272,8 +257,8 @@ def runHotgym(start_date):
 
   # create the CSV file
   global actuals
-  global up
-  global down
+  global bigger
+  global smaller
 
   get_data(start_date)
   last_actual = 0.0
@@ -324,8 +309,8 @@ def runHotgym(start_date):
 
       # calculate the actual VS predicted directional movement
       if iteration > 0:
-        actual_dir = '{}'.format(up) if actual_change > 0 else '{}'.format(down)
-        predicted_dir = '{}'.format(up) if predicted_change > 0 else '{}'.format(down)
+        actual_dir = '{}'.format(bigger) if actual_change > 0 else '{}'.format(smaller)
+        predicted_dir = '{}'.format(bigger) if predicted_change > 0 else '{}'.format(smaller)
         correct = '{}'.format(right) if actual_dir == predicted_dir else '{}'.format(wrong)
       else:
         correct = predicted_dir = actual_dir = '          '
@@ -347,11 +332,11 @@ def runHotgym(start_date):
       # print out results
       row = '{}'.format(iteration + 1).rjust(row_col_len, ' ')
       msg = "Row {}:\t\t{}\t\t".format(row, timestamps[iteration])
-      msg += "spread: {:.8f} {:8.4f}% {}\t\t".format(actual, actual_change, actual_dir)
-      msg += "predicted: {:.8f} {:8.4f}% {}\t\t".format(prediction, predicted_change, predicted_dir)
+      msg += "spread: {:.8f} {:10.4f}% {}\t\t".format(actual, actual_change, actual_dir)
+      msg += "predicted: {:.8f} {:10.4f}% {}\t\t".format(prediction, predicted_change, predicted_dir)
       msg += "{}\t\t".format(correct)
       msg += "score: {:.2f}%\t\t".format(score)
-      msg += "error: {:8.4f}%\t\t".format(avg_pct_error)
+      # msg += "error: {:8.4f}%\t\t".format(avg_pct_error)
       # msg += "confidence: {:8.4f}%\t\t".format(oneStepConfidence * 100)
       print(msg)
 
@@ -361,6 +346,38 @@ def runHotgym(start_date):
       # store values for next iteration
       last_actual = actual
       last_prediction = prediction
+
+
+# Input variables into the system
+MARKET = 'XBTUSD'
+CANDLESTICK_SIZE = '1m' # 1m = 1 minute, 5m = 5 minutes
+DATA_POINTS = 10000
+END_DATE = datetime.utcnow()
+START_DATE = calculate_start_date(end_date=END_DATE, data_points=DATA_POINTS, time_units=CANDLESTICK_SIZE)
+INPUT_FILENAME = '{}.csv'.format(MARKET.lower())
+OUTPUT_FILENAME = '{}-results.txt'.format(MARKET.lower())
+
+# Constants
+EXAMPLE_DIR = os.path.dirname(os.path.abspath(__file__))
+INPUT_FILE_PATH = os.path.join(EXAMPLE_DIR, INPUT_FILENAME)
+OUTPUT_FILE_PATH = os.path.join(EXAMPLE_DIR, OUTPUT_FILENAME)
+PARAMS_PATH = os.path.join(EXAMPLE_DIR, "model.yaml")
+
+# Output variables
+actuals = [0.0]
+timestamps = []
+
+# unicode characters
+up_char = unichr(8593).encode('utf-8')
+down_char = unichr(8595).encode('utf-8')
+right_char = unichr(10003).encode('utf-8')
+wrong_char = unichr(215).encode('utf-8')
+
+# colored messages
+bigger =  '{}{}{} Bigger {}'.format(bcolors.BOLD, bcolors.OKBLUE, up_char, bcolors.ENDC)
+smaller = '{}{}{} Smaller{}'.format(bcolors.BOLD, bcolors.FAIL, down_char, bcolors.ENDC)
+right = '{}{}{} Right {}'.format(bcolors.BOLD, bcolors.OKBLUE, right_char, bcolors.ENDC)
+wrong = '{}{}{} Wrong {}'.format(bcolors.BOLD, bcolors.FAIL, wrong_char, bcolors.ENDC)
 
 
 if __name__ == "__main__":
