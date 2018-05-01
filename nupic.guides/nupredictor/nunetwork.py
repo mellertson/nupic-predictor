@@ -276,6 +276,8 @@ def runHotgym(start_date):
   get_data(start_dt=start_date, data_points=DATA_POINTS, time_unit=CANDLESTICK_SIZE)
   last_actual = 0.0
   last_prediction = 0.0
+  toggle = 1000
+  is_learning = True
   all_results = []
   scores = []
   row_col_len = len(str(DATA_POINTS))
@@ -365,7 +367,7 @@ def runHotgym(start_date):
 MARKET = 'XBTM18'
 MARKET2 = 'XBTUSD'
 CANDLESTICK_SIZE = '5m' # 1m = 1 minute, 5m = 5 minutes
-DATA_POINTS = 10000
+DATA_POINTS = 1000
 END_DATE = datetime.utcnow()
 START_DATE = calculate_start_date(end_date=END_DATE, data_points=DATA_POINTS, time_units=CANDLESTICK_SIZE)
 INPUT_FILENAME = '{}.csv'.format(MARKET.lower())
