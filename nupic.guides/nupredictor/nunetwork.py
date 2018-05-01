@@ -349,7 +349,7 @@ def runHotgym(start_date):
 
 
 # Input variables into the system
-MARKET = 'XBTUSD'
+MARKET = 'XBTM18'
 CANDLESTICK_SIZE = '1m' # 1m = 1 minute, 5m = 5 minutes
 DATA_POINTS = 10000
 END_DATE = datetime.utcnow()
