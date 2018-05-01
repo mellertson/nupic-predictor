@@ -87,10 +87,12 @@ def get_start_dates(start_dt):
   return dates
 
 
-def get_data(start_dt):
+def get_data(start_dt, time_unit):
   """
   :param start_dt:
   :type start_dt: datetime
+  :param time_unit: '1m' | '5m' | '1h' | '1d'
+  :type time_unit: str
   :return:
   """
   # local variables
@@ -102,18 +104,23 @@ def get_data(start_dt):
 
   for start in dates:
     start = start.strftime(fmt).replace(":", "%3A")
-    url = 'https://www.bitmex.com/api/v1/quote/bucketed?binSize=1m&partial=false&symbol={}&count=500&reverse=false&startTime={}'.format(MARKET, start)
+    url = 'https://www.bitmex.com/api/v1/quote/bucketed?binSize={}&partial=false&symbol={}&count=500&reverse=false&startTime={}'.format(time_unit, MARKET, start)
+    url2 = 'https://www.bitmex.com/api/v1/quote/bucketed?binSize={}&partial=false&symbol={}&count=500&reverse=false&startTime={}'.format(time_unit, MARKET2, start)
     response = requests.get(url)
+    sleep(2)
+    response2 = requests.get(url2)
     data = json.loads(response.content.decode('utf-8'))
+    data2 = json.loads(response2.content.decode('utf-8'))
 
     # write the lines of data
     lines = []
     for i in range(len(data)):
       timestamp = parser.parse(data[i]['timestamp'])
       timestamps.append(timestamp)
-      bid_price = float(data[i]['bidPrice'])
-      ask_price = float(data[i]['askPrice'])
-      spread_pct_diff = (ask_price - bid_price) / ask_price * 100
+      quote_median1 = (float(data[i]['bidPrice']) + float(data[i]['askPrice'])) / 2
+      quote_median2 = (float(data2[i]['bidPrice']) + float(data2[i]['askPrice'])) / 2
+
+      spread_pct_diff = (quote_median1 - quote_median2) / quote_median1 * 100
       actuals.append(spread_pct_diff)
       lines.append('{}, {:.15}\n'.format(timestamp.strftime("%Y-%m-%d %H:%M:%S.%f"), spread_pct_diff))
 
@@ -260,7 +267,7 @@ def runHotgym(start_date):
   global bigger
   global smaller
 
-  get_data(start_date)
+  get_data(start_dt=start_date, time_unit=CANDLESTICK_SIZE)
   last_actual = 0.0
   last_prediction = 0.0
   all_results = []
@@ -287,7 +294,7 @@ def runHotgym(start_date):
 
   with open(OUTPUT_FILE_PATH, 'w+') as out_file:
     # output results file header
-    header = 'Nupic Predicting {} Order Book Spread on Bitmex\n\n'.format(MARKET)
+    header = 'Nupic Predicting Spread Between {} and {} on Bitmex\n\n'.format(MARKET, MARKET2)
     out_file.write(header)
     print(header)
     N = 1  # Run the network, N iterations at a time.
@@ -332,8 +339,8 @@ def runHotgym(start_date):
       # print out results
       row = '{}'.format(iteration + 1).rjust(row_col_len, ' ')
       msg = "Row {}:\t\t{}\t\t".format(row, timestamps[iteration])
-      msg += "spread: {:.8f} {:10.4f}% {}\t\t".format(actual, actual_change, actual_dir)
-      msg += "predicted: {:.8f} {:10.4f}% {}\t\t".format(prediction, predicted_change, predicted_dir)
+      msg += "spread: {:.8f} {:11.4f}% {}\t\t".format(actual, actual_change, actual_dir)
+      msg += "predicted: {:.8f} {:11.4f}% {}\t\t".format(prediction, predicted_change, predicted_dir)
       msg += "{}\t\t".format(correct)
       msg += "score: {:.2f}%\t\t".format(score)
       # msg += "error: {:8.4f}%\t\t".format(avg_pct_error)
@@ -350,6 +357,7 @@ def runHotgym(start_date):
 
 # Input variables into the system
 MARKET = 'XBTM18'
+MARKET2 = 'XBTUSD'
 CANDLESTICK_SIZE = '1m' # 1m = 1 minute, 5m = 5 minutes
 DATA_POINTS = 10000
 END_DATE = datetime.utcnow()
