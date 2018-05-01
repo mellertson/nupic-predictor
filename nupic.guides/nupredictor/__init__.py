@@ -1,7 +1,7 @@
 from .nunetwork import (START_DATE, CANDLESTICK_SIZE,
                         DATA_POINTS, EXAMPLE_DIR,
                         INPUT_FILE_PATH, PARAMS_PATH,
-                        bcolors, get_start_dates, get_data)
+                        bcolors, get_start_dates, get_data, calculate_start_date)
 
 
 
@@ -12,5 +12,5 @@ __all__ = [
 
   # classes and functions
   'bcolors',
-  'get_start_dates', 'get_data'
+  'get_start_dates', 'get_data', 'calculate_start_date',
 ]

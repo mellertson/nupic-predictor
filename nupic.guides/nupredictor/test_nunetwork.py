@@ -14,10 +14,12 @@ class Predictor_Functions(TestCase):
     self.start = datetime(2018, 1, 1)
     self.format = "%Y-%m-%d %H:%M:%S.000000"
 
-  def test_get_start_dates(self):
+  def test_get_start_dates____with_1m_time_units(self):
     # inputs
+    data_points = 3000
     start = self.start
     td = timedelta(minutes=500)
+    time_units = '1m'
 
     # expected outputs
     eO_dates = [
@@ -30,7 +32,39 @@ class Predictor_Functions(TestCase):
     ]
 
     # call the method under test
-    aO_dates = get_start_dates(start_dt=start)
+    aO_dates = get_start_dates(start_dt=start, data_points=data_points, time_units=time_units)
+
+    # verify the data type
+    self.assertIsInstance(aO_dates, list)
+
+    # verify the number if items in the returned list
+    self.assertEqual(len(eO_dates), len(aO_dates), heading("Expected {} items returned, but got {}".format(len(eO_dates), len(aO_dates))))
+
+    # verify each date in the list is correct
+    for eO_date in eO_dates:
+      self.assertIn(eO_date, aO_dates,
+        heading("Expected {} in the returned list of dates\n\nBut, got:\n{}".format(eO_date, aO_dates)))
+
+  def test_get_start_dates____with_1d_time_units(self):
+    # inputs
+    data_points = 3000
+    time_units = '1d'
+    end = self.start
+    start = calculate_start_date(end_date=end, data_points=data_points, time_units=time_units)
+    td = timedelta(days=500)
+
+    # expected outputs
+    eO_dates = [
+      start,
+      start + td,
+      start + td * 2,
+      start + td * 3,
+      start + td * 4,
+      start + td * 5,
+    ]
+
+    # call the method under test
+    aO_dates = get_start_dates(start_dt=start, data_points=data_points, time_units=time_units)
 
     # verify the data type
     self.assertIsInstance(aO_dates, list)

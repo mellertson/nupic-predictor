@@ -68,20 +68,24 @@ def add_time(time_units):
   elif h_ptn.search(time_units):
     return timedelta(hours=1)
   elif d_ptn.search(time_units):
-    return timedelta(days=1)
+    return timedelta(hours=24)
   else:
     raise ValueError("{} is an invalid value".format(time_units))
 
 
-def get_start_dates(start_dt):
+def get_start_dates(start_dt, data_points, time_units):
   """
   :param start_dt:
   :type start_dt: datetime
+  :param data_points:
+  :type data_points: int
+  :param time_units: '1m' | '5m' | '1h' | '1d'
+  :type time_units: str
   :rtype: list
   """
   dates = [start_dt]
-  td = add_time(CANDLESTICK_SIZE) * 500
-  blocks = int(DATA_POINTS / 500.0)
+  td = add_time(time_units=time_units) * 500
+  blocks = int(data_points / 500.0)
   for i in range(blocks - 1):
     dates.append(start_dt + td * (i+1))
   return dates
@@ -358,7 +362,7 @@ def runHotgym(start_date):
 # Input variables into the system
 MARKET = 'XBTM18'
 MARKET2 = 'XBTUSD'
-CANDLESTICK_SIZE = '1m' # 1m = 1 minute, 5m = 5 minutes
+CANDLESTICK_SIZE = '1d' # 1m = 1 minute, 5m = 5 minutes
 DATA_POINTS = 10000
 END_DATE = datetime.utcnow()
 START_DATE = calculate_start_date(end_date=END_DATE, data_points=DATA_POINTS, time_units=CANDLESTICK_SIZE)
