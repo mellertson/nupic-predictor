@@ -5,10 +5,11 @@ import yaml
 import requests
 from time import sleep
 from dateutil import parser
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from nupic.engine import Network
 from nupic.encoders import MultiEncoder
 from nupic.data.file_record_stream import FileRecordStream
+import urllib
 
 
 class bcolors(object):
@@ -91,8 +92,10 @@ def get_start_dates(start_dt, data_points, time_units):
   return dates
 
 
-def get_data(start_dt, data_points, time_unit):
+def get_data_from_bitmex(start_dt, data_points, time_unit):
   """
+  Get data directly from Bitmex
+
   :param start_dt:
   :type start_dt: datetime
   :param data_points:
@@ -110,7 +113,7 @@ def get_data(start_dt, data_points, time_unit):
 
   for start in dates:
     start = start.strftime(fmt).replace(":", "%3A")
-    url = 'https://www.bitmex.com/api/v1/quote/bucketed?binSize={}&partial=false&symbol={}&count=500&reverse=false&startTime={}'.format(time_unit, MARKET, start)
+    url = 'https://www.bitmex.com/api/v1/quote/bucketed?binSize={}&partial=false&symbol={}&count=500&reverse=false&startTime={}'.format(time_unit, NMARKET, start)
     url2 = 'https://www.bitmex.com/api/v1/quote/bucketed?binSize={}&partial=false&symbol={}&count=500&reverse=false&startTime={}'.format(time_unit, MARKET2, start)
     response = requests.get(url)
     sleep(2)
@@ -136,6 +139,74 @@ def get_data(start_dt, data_points, time_unit):
 
     # sleep so we don't hit Bitmex's rate limit
     sleep(2)
+
+
+def get_data(exchange, market, start, end, time_units, username='mellertson', password='test', host='localhost', port=8000):
+  """
+  Get data from Django web-service
+
+  :param exchange:
+  :type exchange: str
+  :param market:
+  :type market: str
+  :param start:
+  :type start: datetime
+  :param end:
+  :type end: datetime
+  :param time_units: '1m' | '5m' | '1h' | '1d'
+  :type time_units: str
+  :param username:
+  :type username: str
+  :param password:
+  :type password: str
+  :param host:
+  :type host: str
+  :param port:
+  :type port: int
+  :return:
+  """
+  # local variables
+  global actuals
+  fmt = "%Y-%m-%dT%H:%M:%S.%f"
+
+  # initialize the CSV file
+  initialize_csv()
+
+  # build the base url
+  base_url = 'http://{}:{}@{}:{}/ws/quotes/get'.format(username, password, host, port)
+
+  # build the input variables needed by the web-service
+  params = {'exchange': exchange, 'symbol': market, 'start': start, 'end': end, 'time_units': time_units}
+
+  # send the HTTP request and decode the JSON response
+  response = requests.get(base_url, params=params)
+  data = json.loads(response.content.decode('utf-8'))
+
+  # write the lines of data
+  lines = []
+  for i, row in enumerate(data):
+    # extract the variables from the row
+    exchange = row['exchange']
+    market = row['symbol']
+    bid_price = float(row['bid_price'])
+    bid_size = float(row['bid_size'])
+    ask_price = float(row['ask_price'])
+    ask_size = float(row['ask_size'])
+    timestamp = parser.parse(row['timestamp'])
+
+    # tranform variables into a line for the input file to Nupic
+    value_to_predict = bid_price
+
+    # add the actual value and timestamp to the global variables
+    timestamps.append(timestamp)
+    actuals.append(value_to_predict)
+
+    # add the line we just built to 'lines' for output in a moment
+    lines.append('{}, {:.15}\n'.format(timestamp.strftime("%Y-%m-%d %H:%M:%S.%f"), value_to_predict))
+
+  # save 'lines' to the CSV file
+  with open(INPUT_FILE_PATH, 'a+') as f:
+    f.writelines(lines)
 
 
 def createDataOutLink(network, sensorRegionName, regionName):
@@ -265,15 +336,16 @@ def disableLearning(network):
   network.regions["classifier"].setParameter("learningMode", 0)
 
 
-def runHotgym(start_date):
+def runHotgym():
   """Run the Hot Gym example."""
 
   # create the CSV file
   global actuals
   global bigger
   global smaller
+  global EXCHANGE
+  global SMARKET
 
-  get_data(start_dt=start_date, data_points=DATA_POINTS, time_unit=CANDLESTICK_SIZE)
   last_actual = 0.0
   last_prediction = 0.0
   toggle = 1000
@@ -302,7 +374,7 @@ def runHotgym(start_date):
 
   with open(OUTPUT_FILE_PATH, 'w+') as out_file:
     # output results file header
-    header = 'Nupic Predicting Spread Between {} and {} on Bitmex\n\n'.format(MARKET, MARKET2)
+    header = 'Nupic Predicting Spread Between {} and {} on Bitmex\n\n'.format(NMARKET, MARKET2)
     out_file.write(header)
     print(header)
     N = 1  # Run the network, N iterations at a time.
@@ -364,14 +436,16 @@ def runHotgym(start_date):
 
 
 # Input variables into the system
-MARKET = 'XBTM18'
+EXCHANGE = 'bitmex'
+SMARKET = 'BTC/USD'
+NMARKET = 'XBTM18'
 MARKET2 = 'XBTUSD'
 CANDLESTICK_SIZE = '5m' # 1m = 1 minute, 5m = 5 minutes
 DATA_POINTS = 1000
-END_DATE = datetime.utcnow()
-START_DATE = calculate_start_date(end_date=END_DATE, data_points=DATA_POINTS, time_units=CANDLESTICK_SIZE)
-INPUT_FILENAME = '{}.csv'.format(MARKET.lower())
-OUTPUT_FILENAME = '{}-results.txt'.format(MARKET.lower())
+START_DATE = datetime(2016, 1, 1, tzinfo=timezone.utc)
+END_DATE = datetime(2016, 1, 2, tzinfo=timezone.utc)
+INPUT_FILENAME = '{}.csv'.format(NMARKET.lower())
+OUTPUT_FILENAME = '{}-results.txt'.format(NMARKET.lower())
 
 # Constants
 EXAMPLE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -397,4 +471,11 @@ wrong = '{}{}{} Wrong {}'.format(bcolors.BOLD, bcolors.FAIL, wrong_char, bcolors
 
 
 if __name__ == "__main__":
-  runHotgym(START_DATE)
+  # get the data from Bitmex
+  # get_data(exchange, market, start, end, time_units, username='mellertson', password='test', host='localhost', port=8000)
+  get_data(exchange=EXCHANGE, market=SMARKET, start=START_DATE, end=END_DATE, time_units=CANDLESTICK_SIZE)
+  runHotgym()
+
+
+
+

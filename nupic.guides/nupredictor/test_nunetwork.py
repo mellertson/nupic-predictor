@@ -108,7 +108,7 @@ class Predictor_Functions(TestCase):
     line4_ptn = re.compile(line4, re.DOTALL)
 
     # call the method under test
-    get_data(start_dt=start, data_points=data_points, time_unit=time_unit)
+    get_data(start=start, data_points=data_points, time_units=time_unit)
 
     # open the file just created
     with open(filename, 'r') as f:
@@ -152,7 +152,7 @@ class Predictor_Functions(TestCase):
     line4_ptn = re.compile(line4, re.DOTALL)
 
     # call the method under test
-    get_data(start_dt=start, data_points=data_points, time_unit=time_unit)
+    get_data(start=start, data_points=data_points, time_units=time_unit)
 
     # open the file just created
     with open(filename, 'r') as f:
