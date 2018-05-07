@@ -78,6 +78,11 @@ modelParams:
         name: timestamp_weekend
         type: DateEncoder
         weekend: 21
+      timestamp_season:
+        fieldname: timestamp
+        name: timestamp_season
+        type: DateEncoder
+        season: 21
 
     # The "sensorAutoReset" specifies the period for automatically generated
     # resets from a RecordSensor.

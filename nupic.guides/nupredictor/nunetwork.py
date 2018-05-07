@@ -5,7 +5,8 @@ import yaml
 import requests
 from time import sleep
 from dateutil import parser
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
+import pytz
 from nupic.engine import Network
 from nupic.encoders import MultiEncoder
 from nupic.data.file_record_stream import FileRecordStream
@@ -141,10 +142,13 @@ def get_data_from_bitmex(start_dt, data_points, time_unit):
     sleep(2)
 
 
-def get_data(exchange, market, start, end, time_units, username='mellertson', password='test', host='localhost', port=8000):
+def get_data(refresh_data, exchange, market, start, end, time_units, username='mellertson', password='test', host='localhost', port=8000):
   """
   Get data from Django web-service
 
+  :param refresh_data: True - rebuilds the CSV input file
+    False - does not update or delete the CSV input file
+  :type refresh_data: bool
   :param exchange:
   :type exchange: str
   :param market:
@@ -165,6 +169,9 @@ def get_data(exchange, market, start, end, time_units, username='mellertson', pa
   :type port: int
   :return:
   """
+  if not refresh_data:
+      return
+
   # local variables
   global actuals
   fmt = "%Y-%m-%dT%H:%M:%S.%f"
@@ -173,10 +180,10 @@ def get_data(exchange, market, start, end, time_units, username='mellertson', pa
   initialize_csv()
 
   # build the base url
-  base_url = 'http://{}:{}@{}:{}/ws/quotes/get'.format(username, password, host, port)
+  base_url = 'http://{}:{}/ws/quotes/get'.format(host, port)
 
   # build the input variables needed by the web-service
-  params = {'exchange': exchange, 'symbol': market, 'start': start, 'end': end, 'time_units': time_units}
+  params = {'username': username, 'passwd': password, 'exchange': exchange, 'symbol': market, 'start': start, 'end': end, 'time_units': time_units}
 
   # send the HTTP request and decode the JSON response
   response = requests.get(base_url, params=params)
@@ -187,19 +194,17 @@ def get_data(exchange, market, start, end, time_units, username='mellertson', pa
   for i, row in enumerate(data):
     # extract the variables from the row
     exchange = row['exchange']
-    market = row['symbol']
+    market = row['market']
     bid_price = float(row['bid_price'])
     bid_size = float(row['bid_size'])
     ask_price = float(row['ask_price'])
     ask_size = float(row['ask_size'])
     timestamp = parser.parse(row['timestamp'])
-
-    # tranform variables into a line for the input file to Nupic
     value_to_predict = bid_price
 
-    # add the actual value and timestamp to the global variables
-    timestamps.append(timestamp)
-    actuals.append(value_to_predict)
+    # # add the actual value and timestamp to the global variables
+    # timestamps.append(timestamp)
+    # actuals.append(value_to_predict)
 
     # add the line we just built to 'lines' for output in a moment
     lines.append('{}, {:.15}\n'.format(timestamp.strftime("%Y-%m-%d %H:%M:%S.%f"), value_to_predict))
@@ -207,6 +212,35 @@ def get_data(exchange, market, start, end, time_units, username='mellertson', pa
   # save 'lines' to the CSV file
   with open(INPUT_FILE_PATH, 'a+') as f:
     f.writelines(lines)
+
+
+def read_data_file():
+    global actuals, timestamps
+
+    with open(INPUT_FILE_PATH, 'r') as f:
+        # skip first 3 lines (header rows)
+        f.readline()
+        f.readline()
+        f.readline()
+
+        line = f.readline()
+        i = 0
+        while line != '':
+            row = line.split(',')
+            timestamp = parser.parse(row[0])
+            value_to_predict = float(row[1].split('\n')[0])
+
+            # add timestamp and value to their respective lists
+            timestamps.append(timestamp)
+            actuals.append(value_to_predict)
+
+            # read in the next line
+            line = f.readline()
+            i += 1
+            if i % 500 == 0:
+                print("Read {} lines...".format(i*500))
+
+    print('Done reading the input file.')
 
 
 def createDataOutLink(network, sensorRegionName, regionName):
@@ -419,8 +453,8 @@ def runHotgym():
       # print out results
       row = '{}'.format(iteration + 1).rjust(row_col_len, ' ')
       msg = "Row {}:\t\t{}\t\t".format(row, timestamps[iteration])
-      msg += "spread:{:11.8f} {:12.4f}% {}\t\t".format(actual, actual_change, actual_dir)
-      msg += "predicted:{:11.8f} {:12.4f}% {}\t\t".format(prediction, predicted_change, predicted_dir)
+      msg += "actual value:{:11.8f} {:12.4f}% {}\t\t".format(actual, actual_change, actual_dir)
+      msg += "predicted value:{:11.8f} {:12.4f}% {}\t\t".format(prediction, predicted_change, predicted_dir)
       msg += "{}\t\t".format(correct)
       msg += "score: {:.2f}%\t\t".format(score)
       # msg += "error: {:8.4f}%\t\t".format(avg_pct_error)
@@ -442,8 +476,8 @@ NMARKET = 'XBTM18'
 MARKET2 = 'XBTUSD'
 CANDLESTICK_SIZE = '5m' # 1m = 1 minute, 5m = 5 minutes
 DATA_POINTS = 1000
-START_DATE = datetime(2016, 1, 1, tzinfo=timezone.utc)
-END_DATE = datetime(2016, 1, 2, tzinfo=timezone.utc)
+START_DATE = datetime(2015, 10, 1, tzinfo=pytz.utc)
+END_DATE = datetime(2018, 4, 30, tzinfo=pytz.utc)
 INPUT_FILENAME = '{}.csv'.format(NMARKET.lower())
 OUTPUT_FILENAME = '{}-results.txt'.format(NMARKET.lower())
 
@@ -473,7 +507,9 @@ wrong = '{}{}{} Wrong {}'.format(bcolors.BOLD, bcolors.FAIL, wrong_char, bcolors
 if __name__ == "__main__":
   # get the data from Bitmex
   # get_data(exchange, market, start, end, time_units, username='mellertson', password='test', host='localhost', port=8000)
-  get_data(exchange=EXCHANGE, market=SMARKET, start=START_DATE, end=END_DATE, time_units=CANDLESTICK_SIZE)
+  refresh_data = True
+  get_data(refresh_data=refresh_data, exchange=EXCHANGE, market=SMARKET, start=START_DATE, end=END_DATE, time_units=CANDLESTICK_SIZE)
+  read_data_file()
   runHotgym()
 
 
