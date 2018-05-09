@@ -251,7 +251,7 @@ def cache_input_data_file(fq_input_filename, exchange, market, data_table, start
     f.writelines(lines)
 
 
-def read_data_file(fq_input_filename):
+def read_input_file(fq_input_filename):
   """
   Read the input data file into local variables
 
@@ -646,7 +646,7 @@ if __name__ == "__main__":
 
   # read the input data file into local variables, so the
   # nupic predictor can use them to make its predictions
-  read_data_file(fq_input_filename=FQ_INPUT_FILENAME)
+  read_input_file(fq_input_filename=FQ_INPUT_FILENAME)
 
   # run the Nupic predictor, make the predictions, and
   # save the results to the 'model_output_files' directory
