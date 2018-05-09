@@ -57,7 +57,7 @@ def file_exists(full_path):
     :rtype: bool
     """
   # if the file exists...
-  if not os.path.exists(full_path):
+  if os.path.exists(full_path):
     return True
 
   # if the file does NOT exist...
@@ -285,7 +285,7 @@ def read_input_file(fq_input_filename):
           line = f.readline()
           i += 1
           if i % 500 == 0:
-              print("Read {} lines...".format(i*500))
+              print("Read {} lines...".format(i))
 
   print('Done reading the input file.')
 
@@ -581,9 +581,9 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename)
 # Input variables into the system
 DJANGO_SERVER = 'codehammer' # 'test.macmini.binarycapital.io'
 EXCHANGE = 'bitmex'
-SMARKET = 'BTC/USD'
-NMARKET = 'XBTM18'
-MARKET2 = 'XBTUSD'
+SMARKET = 'BTC/USD'.lower()
+NMARKET = 'XBTM18'.lower()
+MARKET2 = 'XBTUSD'.lower()
 DATA_TABLE = 'quote'
 SUFFIX_NAME = 'bid.ask.price.spread'
 CURRENT_DATE_TIME = datetime.now().strftime("%Y.%m.%d.%I.%M.%p").lower()
