@@ -1,6 +1,6 @@
 import re
 import json
-import os
+import os, errno, shutil
 import yaml
 import requests
 from time import sleep
@@ -22,6 +22,47 @@ class bcolors(object):
   ENDC = '\033[0m'
   BOLD = '\033[1m'
   UNDERLINE = '\033[4m'
+
+
+def create_directory(full_path):
+  """
+  Checks to see if the directory exists, if it does not the directory is created
+
+  :param full_path:
+  :type full_path: str
+  :return: True - if the directory was created or already existed
+    False - if the directory could not be created for any reason
+  :rtype: bool
+  """
+  if not os.path.exists(full_path):
+    try:
+      os.makedirs(full_path)
+    except OSError as e:
+      if e.errno != errno.EEXIST:
+        return False
+
+  # if the directory was created, or already exists, return True
+  # to indicate that the directory is there and can be used by the system
+  return True
+
+
+def file_exists(full_path):
+  """
+    Tests to see if the fully qualified file exists
+
+    :param full_path:
+    :type full_path: str
+    :return: True - if the file exists
+      False - if the file does not exist
+    :rtype: bool
+    """
+  # if the file exists...
+  if not os.path.exists(full_path):
+    return True
+
+  # if the file does NOT exist...
+  else:
+    return False
 
 
 def calculate_start_date(end_date, data_points, time_units):
@@ -126,12 +167,12 @@ def get_data_from_bitmex(start_dt, data_points, time_unit):
     lines = []
     for i in range(len(data)):
       timestamp = parser.parse(data[i]['timestamp'])
-      timestamps.append(timestamp)
+      TIMESTAMPS.append(timestamp)
       quote_median1 = (float(data[i]['bidPrice']) + float(data[i]['askPrice'])) / 2
       quote_median2 = (float(data2[i]['bidPrice']) + float(data2[i]['askPrice'])) / 2
 
       spread_pct_diff = (quote_median1 - quote_median2) / quote_median1 * 100
-      actuals.append(spread_pct_diff)
+      ACTUALS.append(spread_pct_diff)
       lines.append('{}, {:.15}\n'.format(timestamp.strftime("%Y-%m-%d %H:%M:%S.%f"), spread_pct_diff))
 
     # save the data to a .csv file
@@ -142,17 +183,47 @@ def get_data_from_bitmex(start_dt, data_points, time_unit):
     sleep(2)
 
 
-def get_data(refresh_data, exchange, market, start, end, time_units, username='mellertson', password='test', host='localhost', port=8000):
+def create_output_directory(fq_model_template_filename, fq_model_filename, model_output_files_dir):
+  """
+  Creates the experiment's output directory, and copies the Nupic template to the output directory
+
+  The Nupic template is copied into the output directory and renamed to the 'fq_model_filename' parameter.
+  All permission bits are copied from the tempalte file to the model file.  The file contents,
+  owner, and groups are unaffected.
+
+  :param fq_model_template_filename: The fully qualified filename of the YAML model to rename
+    and copy into the output directory
+  :type fq_model_template_filename: str
+  :param fq_model_filename: The fully qualified YAML model file, for the Nupic model (a.k.a. Network)
+  :type fq_model_filename: str
+  :param model_output_files_dir: The fully qualified directory name to be created for the experiment
+  :type model_output_files_dir: str
+  :rtype: None
+  """
+  # create the experiment's output directory
+  create_directory(full_path=model_output_files_dir)
+
+  # copy the Nupic model "template" file to a unique filename,
+  # located in the experiment's output directory
+  shutil.copyfile(src=fq_model_template_filename, dst=fq_model_filename)
+
+  # copy the permission bits from the tempalte filename to the
+  # model filename in the output directory
+  shutil.copymode(src=fq_model_template_filename, dst=fq_model_filename)
+
+
+def cache_input_data_file(fq_input_filename, exchange, market, data_table, start, end, time_units, username='mellertson', password='test', host='localhost', port=8000):
   """
   Get data from Django web-service
 
-  :param refresh_data: True - rebuilds the CSV input file
-    False - does not update or delete the CSV input file
-  :type refresh_data: bool
+  :param fq_input_filename: The CSV file containing the input data to run through the Nupic model
+  :type fq_input_filename: str
   :param exchange:
   :type exchange: str
   :param market:
   :type market: str
+  :param data_table: The Django data model (table name) the data originates from
+  :type data_table: str
   :param start:
   :type start: datetime
   :param end:
@@ -169,25 +240,27 @@ def get_data(refresh_data, exchange, market, start, end, time_units, username='m
   :type port: int
   :return:
   """
-  if not refresh_data:
+  if file_exists(full_path=fq_input_filename):
       return
 
   # local variables
-  global actuals
-  fmt = "%Y-%m-%dT%H:%M:%S.%f"
+  global ACTUALS
 
   # initialize the CSV file
   initialize_csv()
 
   # build the base url
-  base_url = 'http://{}:{}/ws/quotes/get'.format(host, port)
+  base_url = 'http://{}:{}/ws/data/get'.format(host, port)
 
   # build the input variables needed by the web-service
-  params = {'username': username, 'passwd': password, 'exchange': exchange, 'symbol': market, 'start': start, 'end': end, 'time_units': time_units}
+  params = {'username': username, 'passwd': password, 'exchange': exchange, 'symbol': market, 'data_table': data_table, 'start': start, 'end': end, 'time_units': time_units}
 
   # send the HTTP request and decode the JSON response
-  response = requests.get(base_url, params=params)
+  response = requests.get(base_url, params=params, timeout=60*60)
   data = json.loads(response.content.decode('utf-8'))
+
+  # HIGH: re-write get_data()', so it saves the input data file to a more correct (a.k.a. generic) file name
+  # HIGH: create a new function, so it tranforms the input data and saves it to a more correct (a.k.a. specific) file name
 
   # write the lines of data
   lines = []
@@ -200,7 +273,10 @@ def get_data(refresh_data, exchange, market, start, end, time_units, username='m
     ask_price = float(row['ask_price'])
     ask_size = float(row['ask_size'])
     timestamp = parser.parse(row['timestamp'])
-    value_to_predict = bid_price
+    try:
+      value_to_predict = (ask_price - bid_price) / ask_price * 100.0
+    except ZeroDivisionError:
+      value_to_predict = 0.0
 
     # # add the actual value and timestamp to the global variables
     # timestamps.append(timestamp)
@@ -210,37 +286,47 @@ def get_data(refresh_data, exchange, market, start, end, time_units, username='m
     lines.append('{}, {:.15}\n'.format(timestamp.strftime("%Y-%m-%d %H:%M:%S.%f"), value_to_predict))
 
   # save 'lines' to the CSV file
-  with open(INPUT_FILE_PATH, 'a+') as f:
+  with open(FQ_INPUT_FILENAME, 'a+') as f:
     f.writelines(lines)
 
 
-def read_data_file():
-    global actuals, timestamps
+def read_data_file(fq_input_filename):
+  """
+  Read the input data file into local variables
 
-    with open(INPUT_FILE_PATH, 'r') as f:
-        # skip first 3 lines (header rows)
-        f.readline()
-        f.readline()
-        f.readline()
+  Read the input data file into local variables, so the
+  nupic predictor can use them to make its predictions
 
-        line = f.readline()
-        i = 0
-        while line != '':
-            row = line.split(',')
-            timestamp = parser.parse(row[0])
-            value_to_predict = float(row[1].split('\n')[0])
+  :param fq_input_filename: The fully qualified file name to the input data file
+  :type fq_input_filename: str
+  :rtype: None
+  """
+  global ACTUALS, TIMESTAMPS
 
-            # add timestamp and value to their respective lists
-            timestamps.append(timestamp)
-            actuals.append(value_to_predict)
+  with open(fq_input_filename, 'r') as f:
+      # skip first 3 lines (header rows)
+      f.readline()
+      f.readline()
+      f.readline()
 
-            # read in the next line
-            line = f.readline()
-            i += 1
-            if i % 500 == 0:
-                print("Read {} lines...".format(i*500))
+      line = f.readline()
+      i = 0
+      while line != '':
+          row = line.split(',')
+          timestamp = parser.parse(row[0])
+          value_to_predict = float(row[1].split('\n')[0])
 
-    print('Done reading the input file.')
+          # add timestamp and value to their respective lists
+          TIMESTAMPS.append(timestamp)
+          ACTUALS.append(value_to_predict)
+
+          # read in the next line
+          line = f.readline()
+          i += 1
+          if i % 500 == 0:
+              print("Read {} lines...".format(i*500))
+
+  print('Done reading the input file.')
 
 
 def createDataOutLink(network, sensorRegionName, regionName):
@@ -278,9 +364,18 @@ def createEncoder(encoderParams):
   return encoder
 
 
-def createNetwork(dataSource):
-  """Create and initialize a network."""
-  with open(PARAMS_PATH, "r") as f:
+def createNetwork(dataSource, fq_model_filename):
+  """
+  Create and initialize the Nupic model (a.k.a. Network)
+
+  :param dataSource: The input data source for the Nupic model
+  :type dataSource: FileRecordStream
+  :param fq_model_filename: The fully qualified Nupic model filename
+  :type fq_model_filename: str
+  :returns: A fully initialized Nupic model (a.k.a. Network)
+  :rtype: Network
+  """
+  with open(fq_model_filename, "r") as f:
     modelParams = yaml.safe_load(f)["modelParams"]
 
   # Create a network that will hold the regions
@@ -370,29 +465,19 @@ def disableLearning(network):
   network.regions["classifier"].setParameter("learningMode", 0)
 
 
-def runHotgym():
-  """Run the Hot Gym example."""
+def configureNetwork(network):
+  """
+  Configure the Nupic network
 
-  # create the CSV file
-  global actuals
-  global up
-  global down
-  global EXCHANGE
-  global SMARKET
+  Does the following:
+    - sets the "predicted field" found in the data source
+    - turns on learning mode for all regions in the network
+    - turns on "inference mode" for all regions in the network
 
-  last_actual = 0.0
-  last_prediction = 0.0
-  toggle = 1000
-  is_learning = True
-  all_results = []
-  scores = []
-  row_col_len = len(str(DATA_POINTS))
-
-  # Create a data source for the network.
-  dataSource = FileRecordStream(streamID=INPUT_FILE_PATH)
-  numRecords = dataSource.getDataRowCount()
-  network = createNetwork(dataSource)
-
+  :param network: A fully initialized Nupic model (a.k.a. Network)
+  :type network: Network
+  :rtype: None
+  """
   # Set predicted field.
   network.regions["sensor"].setParameter("predictedField", "consumption")
 
@@ -406,7 +491,51 @@ def runHotgym():
   network.regions["TM"].setParameter("inferenceMode", 1)
   network.regions["classifier"].setParameter("inferenceMode", 1)
 
-  with open(OUTPUT_FILE_PATH, 'w+') as out_file:
+
+def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename):
+  """
+  run the Nupic predictor, save the results to the 'model_output_files' directory
+
+  :param fq_input_filename: The fully qualified path to the Nupic formatted input file name
+  :type fq_input_filename: str
+  :param fq_model_filename: The fully qualified path to the Nupic model parameters (in YAML format)
+  :type fq_model_filename: str
+  :param fq_results_filename: The fully qualified filename to store the results in
+  :type fq_results_filename: str
+  :return:
+  """
+
+  # create the CSV file
+  global ACTUALS
+  global UP
+  global DOWN
+  global EXCHANGE
+  global SMARKET
+
+  last_actual = 0.0
+  last_prediction = 0.0
+  toggle = 1000
+  is_learning = True
+  all_results = []
+  scores = []
+  row_col_len = len(str(DATA_POINTS))
+
+  # Create a data source for the network.
+  dataSource = FileRecordStream(streamID=fq_input_filename)
+  numRecords = dataSource.getDataRowCount()
+  network = createNetwork(dataSource=dataSource, fq_model_filename=fq_model_filename)
+
+  # Configure the network according to the model parameters
+  configureNetwork(network=network)
+
+  # pop one item off the top of the actuals and timestamps, so the
+  # actual and predicted values will line up
+  del(ACTUALS[0])
+  del(TIMESTAMPS[0])
+  ACTUALS.append(0.0)
+  TIMESTAMPS.append(TIMESTAMPS[-1] + timedelta(minutes=5))
+
+  with open(fq_results_filename, 'w+') as out_file:
     # output results file header
     header = 'Nupic Predicting Spread Between {} and {} on Bitmex\n\n'.format(NMARKET, MARKET2)
     header += ' '.join(['Row', 'Timestamp',
@@ -419,7 +548,7 @@ def runHotgym():
     print(header)
     N = 1  # Run the network, N iterations at a time.
     for iteration in range(0, numRecords, N):
-      actual = actuals[iteration]
+      actual = ACTUALS[iteration]
 
       # make predictions
       network.run(N)
@@ -438,15 +567,15 @@ def runHotgym():
       ###################################################################################################
       # calculate the actual direction VS predicted direction
       if iteration > 0:
-        actual_dir = '{}'.format(up) if actual_change > 0 else '{}'.format(down)
-        predicted_dir = '{}'.format(up) if predicted_change > 0 else '{}'.format(down)
-        correct = '{}'.format(right) if actual_dir == predicted_dir else '{}'.format(wrong)
+        actual_dir = '{}'.format(UP) if actual_change > 0 else '{}'.format(DOWN)
+        predicted_dir = '{}'.format(UP) if predicted_change > 0 else '{}'.format(DOWN)
+        correct = '{}'.format(RIGHT) if actual_dir == predicted_dir else '{}'.format(WRONG)
       else:
         correct = predicted_dir = actual_dir = '          '
 
       # store the actual and prediction
       all_results.append({'actual': actual, 'prediction': prediction, 'error': error})
-      scores.append(1.0 if correct == right else 0.0)
+      scores.append(1.0 if correct == RIGHT else 0.0)
 
       # calculate the average percent error of the prediction
       avg_pct_error = 0.0
@@ -460,7 +589,7 @@ def runHotgym():
 
       # print out results
       row = '{}'.format(iteration + 1).rjust(row_col_len, ' ')
-      msg = "Row {}:\t{}\t".format(row, timestamps[iteration])
+      msg = "Row {}:\t{}\t".format(row, TIMESTAMPS[iteration])
       msg += "actual value:{:11.8f} {:12.4f}% {}\t".format(actual, actual_change, actual_dir)
       msg += "predicted value:{:11.8f} {:12.4f}% {}\t".format(prediction, predicted_change, predicted_dir)
       msg += "{}\t".format(correct)
@@ -471,7 +600,7 @@ def runHotgym():
 
       # Write results to output file
       row = '{}'.format(iteration + 1).rjust(row_col_len, ' ')
-      msg = "{}, {}, ".format(row, timestamps[iteration])
+      msg = "{}, {}, ".format(row, TIMESTAMPS[iteration])
       msg += "{:11.8f}, {:12.4f}%, {}, ".format(actual, actual_change, actual_dir)
       msg += "{:11.8f}, {:12.4f}%, {}, ".format(prediction, predicted_change, predicted_dir)
       msg += "{}, ".format(correct)
@@ -485,56 +614,84 @@ def runHotgym():
       # last_prediction = prediction
 
 
+# TODO: create function to compress data files into a TAR.GZ file
+
+
 # Input variables into the system
+DJANGO_SERVER = 'codehammer' # 'test.macmini.binarycapital.io'
 EXCHANGE = 'bitmex'
 SMARKET = 'BTC/USD'
 NMARKET = 'XBTM18'
 MARKET2 = 'XBTUSD'
+DATA_TABLE = 'quote'
+SUFFIX_NAME = 'bid.ask.price.spread'
+CURRENT_DATE_TIME = datetime.now().strftime("%Y.%m.%d.%I.%M.%p").lower()
 CANDLESTICK_SIZE = '5m' # 1m = 1 minute, 5m = 5 minutes
 START_DATE = datetime(2015, 10, 1, tzinfo=pytz.utc)
-END_DATE = datetime(2015, 10, 2, tzinfo=pytz.utc)
+END_DATE = datetime(2018, 4, 1, tzinfo=pytz.utc)
 DATA_POINTS = int((END_DATE - START_DATE).total_seconds() / 60 / 5) + 1
-INPUT_FILENAME = '{}.csv'.format(NMARKET.lower())
-OUTPUT_FILENAME = '{}-results.txt'.format(NMARKET.lower())
 
-# Constants
-EXAMPLE_DIR = os.path.dirname(os.path.abspath(__file__))
-INPUT_FILE_PATH = os.path.join(EXAMPLE_DIR, INPUT_FILENAME)
-OUTPUT_FILE_PATH = os.path.join(EXAMPLE_DIR, OUTPUT_FILENAME)
-PARAMS_PATH = os.path.join(EXAMPLE_DIR, "model.yaml")
+# INPUT and OUTPUT file names
+EXPERIMENT_NAME = '{}.{}.{}.{}.{}'.format(CURRENT_DATE_TIME, EXCHANGE, NMARKET, DATA_TABLE, SUFFIX_NAME)
+INPUT_FILENAME = '{}.{}.{}.csv'.format(EXCHANGE, NMARKET, DATA_TABLE)
+RESULTS_FILENAME = '{}.results.csv'.format(EXPERIMENT_NAME)
+MODEL_FILENAME = '{}.model.yaml'.format(EXPERIMENT_NAME)
+
+# INPUT and OUTPUT directory names
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_INPUT_FILES_DIR = os.path.join(BASE_DIR, 'model_input_files')
+MODEL_OUTPUT_FILES_DIR = os.path.join(BASE_DIR, 'model_output_files/{}'.format(EXPERIMENT_NAME))
+FQ_INPUT_FILENAME = os.path.join(MODEL_INPUT_FILES_DIR, INPUT_FILENAME)
+FQ_RESULTS_FILENAME = os.path.join(MODEL_OUTPUT_FILES_DIR, RESULTS_FILENAME)
+FQ_MODEL_FILENAME = os.path.join(MODEL_OUTPUT_FILES_DIR, MODEL_FILENAME)
+FQ_MODEL_TEMPLATE_FILENAME = os.path.join(MODEL_INPUT_FILES_DIR, "model-template.yaml")
 
 # Output variables
-actuals = []
-timestamps = []
+ACTUALS = []
+TIMESTAMPS = []
 
 # unicode characters
-up_char = unichr(8593).encode('utf-8')
-down_char = unichr(8595).encode('utf-8')
-right_char = unichr(10003).encode('utf-8')
-wrong_char = unichr(215).encode('utf-8')
+UP_CHAR = unichr(8593).encode('utf-8')
+DOWN_CHAR = unichr(8595).encode('utf-8')
+RIGHT_CHAR = unichr(10003).encode('utf-8')
+WRONG_CHAR = unichr(215).encode('utf-8')
 
 # colored messages
-up = '{}{}{} Bigger {}'.format(bcolors.BOLD, bcolors.OKBLUE, up_char, bcolors.ENDC)
-down = '{}{}{} Smaller{}'.format(bcolors.BOLD, bcolors.FAIL, down_char, bcolors.ENDC)
-right = '{}{}{} Right {}'.format(bcolors.BOLD, bcolors.OKBLUE, right_char, bcolors.ENDC)
-wrong = '{}{}{} Wrong {}'.format(bcolors.BOLD, bcolors.FAIL, wrong_char, bcolors.ENDC)
+UP = '{}{}{} Bigger {}'.format(bcolors.BOLD, bcolors.OKBLUE, UP_CHAR, bcolors.ENDC)
+DOWN = '{}{}{} Smaller{}'.format(bcolors.BOLD, bcolors.FAIL, DOWN_CHAR, bcolors.ENDC)
+RIGHT = '{}{}{} Right {}'.format(bcolors.BOLD, bcolors.OKBLUE, RIGHT_CHAR, bcolors.ENDC)
+WRONG = '{}{}{} Wrong {}'.format(bcolors.BOLD, bcolors.FAIL, WRONG_CHAR, bcolors.ENDC)
 
 
 if __name__ == "__main__":
-  # get the data from Bitmex
-  # get_data(exchange, market, start, end, time_units, username='mellertson', password='test', host='localhost', port=8000)
-  refresh_data = True
-  django_server = 'test.macmini.binarycapital.io'
-  get_data(refresh_data=refresh_data,
-           exchange=EXCHANGE,
-           market=SMARKET,
-           start=START_DATE,
-           end=END_DATE,
-           time_units=CANDLESTICK_SIZE,
-           host=django_server,
-           port=80)
-  read_data_file()
-  runHotgym()
+  # create the 'model_output_files' directory and copy the model template
+  # file into the 'model_output_files' directory and rename it
+  create_output_directory(fq_model_template_filename=FQ_MODEL_TEMPLATE_FILENAME,
+                          fq_model_filename=FQ_MODEL_FILENAME,
+                          model_output_files_dir=MODEL_OUTPUT_FILES_DIR)
+
+  # if the input data file does not exist, get the data from
+  # the Django server and cache it in a local CSV file in
+  # the 'model_input_files' directory
+  cache_input_data_file(fq_input_filename=FQ_INPUT_FILENAME,
+                        exchange=EXCHANGE,
+                        market=SMARKET,
+                        data_table=DATA_TABLE,
+                        start=START_DATE,
+                        end=END_DATE,
+                        time_units=CANDLESTICK_SIZE,
+                        host=DJANGO_SERVER,
+                        port=8000)
+
+  # read the input data file into local variables, so the
+  # nupic predictor can use them to make its predictions
+  read_data_file(fq_input_filename=FQ_INPUT_FILENAME)
+
+  # run the Nupic predictor, make the predictions, and
+  # save the results to the 'model_output_files' directory
+  run_the_predictor(fq_input_filename=FQ_INPUT_FILENAME,
+                    fq_model_filename=FQ_MODEL_FILENAME,
+                    fq_results_filename=FQ_RESULTS_FILENAME)
 
 
 
