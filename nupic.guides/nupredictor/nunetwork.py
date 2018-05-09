@@ -81,7 +81,17 @@ def calculate_start_date(end_date, data_points, time_units):
   return start_date
 
 
-def initialize_csv():
+def initialize_csv(fq_input_filename):
+  """
+  Creates the input filename, initializing its top three rows in the Nupic file format
+
+  NOTE: The "input file" will be over-written if it exists. If it does
+  not exist, it will be created.
+
+  :param fq_input_filename: The fully qualified path to the "input file"
+  :type fq_input_filename: str
+  :rtype: None
+  """
   # write the headers
   lines = list()
   lines.append('timestamp, consumption\n')
@@ -89,7 +99,7 @@ def initialize_csv():
   lines.append('T, \n')
 
   # save the data to a .csv file
-  with open(INPUT_FILE_PATH, 'w') as f:
+  with open(fq_input_filename, 'w') as f:
     f.writelines(lines)
 
 
@@ -134,55 +144,6 @@ def get_start_dates(start_dt, data_points, time_units):
   return dates
 
 
-def get_data_from_bitmex(start_dt, data_points, time_unit):
-  """
-  Get data directly from Bitmex
-
-  :param start_dt:
-  :type start_dt: datetime
-  :param data_points:
-  :type data_points: int
-  :param time_unit: '1m' | '5m' | '1h' | '1d'
-  :type time_unit: str
-  :return:
-  """
-  # local variables
-  fmt = "%Y-%m-%dT%H:%M:%S.000Z"
-  dates = get_start_dates(start_dt=start_dt, data_points=data_points, time_units=time_unit)
-
-  # initialize the CSV file
-  initialize_csv()
-
-  for start in dates:
-    start = start.strftime(fmt).replace(":", "%3A")
-    url = 'https://www.bitmex.com/api/v1/quote/bucketed?binSize={}&partial=false&symbol={}&count=500&reverse=false&startTime={}'.format(time_unit, NMARKET, start)
-    url2 = 'https://www.bitmex.com/api/v1/quote/bucketed?binSize={}&partial=false&symbol={}&count=500&reverse=false&startTime={}'.format(time_unit, MARKET2, start)
-    response = requests.get(url)
-    sleep(2)
-    response2 = requests.get(url2)
-    data = json.loads(response.content.decode('utf-8'))
-    data2 = json.loads(response2.content.decode('utf-8'))
-
-    # write the lines of data
-    lines = []
-    for i in range(len(data)):
-      timestamp = parser.parse(data[i]['timestamp'])
-      TIMESTAMPS.append(timestamp)
-      quote_median1 = (float(data[i]['bidPrice']) + float(data[i]['askPrice'])) / 2
-      quote_median2 = (float(data2[i]['bidPrice']) + float(data2[i]['askPrice'])) / 2
-
-      spread_pct_diff = (quote_median1 - quote_median2) / quote_median1 * 100
-      ACTUALS.append(spread_pct_diff)
-      lines.append('{}, {:.15}\n'.format(timestamp.strftime("%Y-%m-%d %H:%M:%S.%f"), spread_pct_diff))
-
-    # save the data to a .csv file
-    with open(INPUT_FILE_PATH, 'a+') as f:
-      f.writelines(lines)
-
-    # sleep so we don't hit Bitmex's rate limit
-    sleep(2)
-
-
 def create_output_directory(fq_model_template_filename, fq_model_filename, model_output_files_dir):
   """
   Creates the experiment's output directory, and copies the Nupic template to the output directory
@@ -214,7 +175,7 @@ def create_output_directory(fq_model_template_filename, fq_model_filename, model
 
 def cache_input_data_file(fq_input_filename, exchange, market, data_table, start, end, time_units, username='mellertson', password='test', host='localhost', port=8000):
   """
-  Get data from Django web-service
+  Get data from Django web-service, creating the input file if it does not exist
 
   :param fq_input_filename: The CSV file containing the input data to run through the Nupic model
   :type fq_input_filename: str
@@ -246,8 +207,8 @@ def cache_input_data_file(fq_input_filename, exchange, market, data_table, start
   # local variables
   global ACTUALS
 
-  # initialize the CSV file
-  initialize_csv()
+  # Create the input file, over-writing it if it exists
+  initialize_csv(fq_input_filename=fq_input_filename)
 
   # build the base url
   base_url = 'http://{}:{}/ws/data/get'.format(host, port)
