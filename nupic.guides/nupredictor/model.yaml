@@ -154,11 +154,11 @@ modelParams:
     permanenceDec: 0.13
     maxAge: 0
     globalDecay: 0.0
-    maxSynapsesPerSegment: 48
+    maxSynapsesPerSegment: 32
     maxSegmentsPerCell: 128
-    minThreshold: 16
-    activationThreshold: 42
-    outputType: activeState # normal
+    minThreshold: 12
+    activationThreshold: 16
+    outputType: normal
     pamLength: 1
     # Mike's custom configs
     burnIn: 2

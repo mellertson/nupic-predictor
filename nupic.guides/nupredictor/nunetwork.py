@@ -375,8 +375,8 @@ def runHotgym():
 
   # create the CSV file
   global actuals
-  global bigger
-  global smaller
+  global up
+  global down
   global EXCHANGE
   global SMARKET
 
@@ -409,6 +409,12 @@ def runHotgym():
   with open(OUTPUT_FILE_PATH, 'w+') as out_file:
     # output results file header
     header = 'Nupic Predicting Spread Between {} and {} on Bitmex\n\n'.format(NMARKET, MARKET2)
+    header += ' '.join(['Row', 'Timestamp',
+              'Actual', 'Actual Change', 'Actual Direction',
+              'Prediction', 'Predicted Change', 'Predicted Direction',
+              'Correct', 'Score',
+              'Error', 'Confidence'])
+    header += '\n'
     out_file.write(header)
     print(header)
     N = 1  # Run the network, N iterations at a time.
@@ -423,15 +429,17 @@ def runHotgym():
       prediction = predictionResults[1]["predictedValue"]
       oneStepConfidence = predictionResults[1]["predictionConfidence"]
 
-      # calculate stats on the prediction VS actual
+      ###################################################################################################
+      # calculate error and actuals VS predicted
       error = (actual - prediction) / actual * 100 if abs(actual) > 0 else 0.0
       actual_change = (actual - last_actual) / actual * 100 if abs(actual) > 0 else 0.0
-      predicted_change = (prediction - last_prediction) / prediction * 100 if iteration > 0 else 0.0
+      predicted_change = (prediction - last_actual) / last_actual * 100 if iteration > 0 else 0.0
 
-      # calculate the actual VS predicted directional movement
+      ###################################################################################################
+      # calculate the actual direction VS predicted direction
       if iteration > 0:
-        actual_dir = '{}'.format(bigger) if actual_change > 0 else '{}'.format(smaller)
-        predicted_dir = '{}'.format(bigger) if predicted_change > 0 else '{}'.format(smaller)
+        actual_dir = '{}'.format(up) if actual_change > 0 else '{}'.format(down)
+        predicted_dir = '{}'.format(up) if predicted_change > 0 else '{}'.format(down)
         correct = '{}'.format(right) if actual_dir == predicted_dir else '{}'.format(wrong)
       else:
         correct = predicted_dir = actual_dir = '          '
@@ -452,21 +460,29 @@ def runHotgym():
 
       # print out results
       row = '{}'.format(iteration + 1).rjust(row_col_len, ' ')
-      msg = "Row {}:\t\t{}\t\t".format(row, timestamps[iteration])
-      msg += "actual value:{:11.8f} {:12.4f}% {}\t\t".format(actual, actual_change, actual_dir)
-      msg += "predicted value:{:11.8f} {:12.4f}% {}\t\t".format(prediction, predicted_change, predicted_dir)
-      msg += "{}\t\t".format(correct)
-      msg += "score: {:.2f}%\t\t".format(score)
-      # msg += "error: {:8.4f}%\t\t".format(avg_pct_error)
-      # msg += "confidence: {:8.4f}%\t\t".format(oneStepConfidence * 100)
+      msg = "Row {}:\t{}\t".format(row, timestamps[iteration])
+      msg += "actual value:{:11.8f} {:12.4f}% {}\t".format(actual, actual_change, actual_dir)
+      msg += "predicted value:{:11.8f} {:12.4f}% {}\t".format(prediction, predicted_change, predicted_dir)
+      msg += "{}\t".format(correct)
+      msg += "score: {:.2f}%\t".format(score)
+      msg += "error: {:.2f}%\t".format(avg_pct_error)
+      msg += "confidence: {:.2f}%\t".format(oneStepConfidence * 100)
       print(msg)
 
       # Write results to output file
+      row = '{}'.format(iteration + 1).rjust(row_col_len, ' ')
+      msg = "{}, {}, ".format(row, timestamps[iteration])
+      msg += "{:11.8f}, {:12.4f}%, {}, ".format(actual, actual_change, actual_dir)
+      msg += "{:11.8f}, {:12.4f}%, {}, ".format(prediction, predicted_change, predicted_dir)
+      msg += "{}, ".format(correct)
+      msg += "{:.2f}%, ".format(score)
+      msg += "{:.2f}%, ".format(avg_pct_error)
+      msg += "{:.2f}%".format(oneStepConfidence * 100)
       out_file.write(msg + '\n')
 
       # store values for next iteration
       last_actual = actual
-      last_prediction = prediction
+      # last_prediction = prediction
 
 
 # Input variables into the system
@@ -475,9 +491,9 @@ SMARKET = 'BTC/USD'
 NMARKET = 'XBTM18'
 MARKET2 = 'XBTUSD'
 CANDLESTICK_SIZE = '5m' # 1m = 1 minute, 5m = 5 minutes
-DATA_POINTS = 1000
 START_DATE = datetime(2015, 10, 1, tzinfo=pytz.utc)
-END_DATE = datetime(2018, 4, 30, tzinfo=pytz.utc)
+END_DATE = datetime(2015, 10, 2, tzinfo=pytz.utc)
+DATA_POINTS = int((END_DATE - START_DATE).total_seconds() / 60 / 5) + 1
 INPUT_FILENAME = '{}.csv'.format(NMARKET.lower())
 OUTPUT_FILENAME = '{}-results.txt'.format(NMARKET.lower())
 
@@ -488,7 +504,7 @@ OUTPUT_FILE_PATH = os.path.join(EXAMPLE_DIR, OUTPUT_FILENAME)
 PARAMS_PATH = os.path.join(EXAMPLE_DIR, "model.yaml")
 
 # Output variables
-actuals = [0.0]
+actuals = []
 timestamps = []
 
 # unicode characters
@@ -498,8 +514,8 @@ right_char = unichr(10003).encode('utf-8')
 wrong_char = unichr(215).encode('utf-8')
 
 # colored messages
-bigger =  '{}{}{} Bigger {}'.format(bcolors.BOLD, bcolors.OKBLUE, up_char, bcolors.ENDC)
-smaller = '{}{}{} Smaller{}'.format(bcolors.BOLD, bcolors.FAIL, down_char, bcolors.ENDC)
+up = '{}{}{} Bigger {}'.format(bcolors.BOLD, bcolors.OKBLUE, up_char, bcolors.ENDC)
+down = '{}{}{} Smaller{}'.format(bcolors.BOLD, bcolors.FAIL, down_char, bcolors.ENDC)
 right = '{}{}{} Right {}'.format(bcolors.BOLD, bcolors.OKBLUE, right_char, bcolors.ENDC)
 wrong = '{}{}{} Wrong {}'.format(bcolors.BOLD, bcolors.FAIL, wrong_char, bcolors.ENDC)
 
@@ -508,7 +524,15 @@ if __name__ == "__main__":
   # get the data from Bitmex
   # get_data(exchange, market, start, end, time_units, username='mellertson', password='test', host='localhost', port=8000)
   refresh_data = True
-  get_data(refresh_data=refresh_data, exchange=EXCHANGE, market=SMARKET, start=START_DATE, end=END_DATE, time_units=CANDLESTICK_SIZE)
+  django_server = 'test.macmini.binarycapital.io'
+  get_data(refresh_data=refresh_data,
+           exchange=EXCHANGE,
+           market=SMARKET,
+           start=START_DATE,
+           end=END_DATE,
+           time_units=CANDLESTICK_SIZE,
+           host=django_server,
+           port=80)
   read_data_file()
   runHotgym()
 
