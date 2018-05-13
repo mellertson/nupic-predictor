@@ -151,16 +151,15 @@ modelParams:
     newSynapseCount: 20
     initialPerm: 0.21
     permanenceInc: 0.1
-    permanenceDec: 0.1
-    maxAge: 0
-    globalDecay: 0.0
-    maxSynapsesPerSegment: 32
-    maxSegmentsPerCell: 128
+    permanenceDec: 0.15
+    maxAge: 10
+    globalDecay: 1.0
+#    maxSynapsesPerSegment: -1
+#    maxSegmentsPerCell: -1
     minThreshold: 12
     activationThreshold: 16
     outputType: normal
     pamLength: 1
-    # Mike's custom configs
     burnIn: 2
     maxInfBacktrack: 20
     maxLrnBacktrack: 10

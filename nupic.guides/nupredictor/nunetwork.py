@@ -10,7 +10,9 @@ import pytz
 from nupic.engine import Network
 from nupic.encoders import MultiEncoder
 from nupic.data.file_record_stream import FileRecordStream
+# from cerebro2.patcher import Patcher
 import urllib
+from optparse import OptionParser
 
 
 class bcolors(object):
@@ -201,8 +203,8 @@ def cache_input_data_file(fq_input_filename, exchange, market, data_table, start
   :type port: int
   :return:
   """
-  if file_exists(full_path=fq_input_filename):
-      return
+  # if file_exists(full_path=fq_input_filename):
+  #     return
 
   # local variables
   global ACTUALS
@@ -247,7 +249,7 @@ def cache_input_data_file(fq_input_filename, exchange, market, data_table, start
     lines.append('{}, {:.15}\n'.format(timestamp.strftime("%Y-%m-%d %H:%M:%S.%f"), value_to_predict))
 
   # save 'lines' to the CSV file
-  with open(FQ_INPUT_FILENAME, 'a+') as f:
+  with open(fq_input_filename, 'a+') as f:
     f.writelines(lines)
 
 
@@ -585,7 +587,7 @@ SMARKET = 'BTC/USD'.lower()
 NMARKET = 'XBTM18'.lower()
 MARKET2 = 'XBTUSD'.lower()
 DATA_TABLE = 'quote'
-SUFFIX_NAME = 'bid.ask.price.spread'
+SUFFIX_NAME = 'bid.ask.price.spread-maxAge10-globDecay1.0'
 CURRENT_DATE_TIME = datetime.now().strftime("%Y.%m.%d.%I.%M.%p").lower()
 CANDLESTICK_SIZE = '5m' # 1m = 1 minute, 5m = 5 minutes
 START_DATE = datetime(2015, 10, 1, tzinfo=pytz.utc)
@@ -602,7 +604,7 @@ MODEL_FILENAME = '{}.model.yaml'.format(EXPERIMENT_NAME)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_INPUT_FILES_DIR = os.path.join(BASE_DIR, 'model_input_files')
 MODEL_OUTPUT_FILES_DIR = os.path.join(BASE_DIR, 'model_output_files/{}'.format(EXPERIMENT_NAME))
-FQ_INPUT_FILENAME = os.path.join(MODEL_INPUT_FILES_DIR, INPUT_FILENAME)
+# FQ_INPUT_FILENAME = os.path.join(MODEL_INPUT_FILES_DIR, INPUT_FILENAME)
 FQ_RESULTS_FILENAME = os.path.join(MODEL_OUTPUT_FILES_DIR, RESULTS_FILENAME)
 FQ_MODEL_FILENAME = os.path.join(MODEL_OUTPUT_FILES_DIR, MODEL_FILENAME)
 FQ_MODEL_TEMPLATE_FILENAME = os.path.join(MODEL_INPUT_FILES_DIR, "model-template.yaml")
@@ -617,14 +619,28 @@ DOWN_CHAR = unichr(8595).encode('utf-8')
 RIGHT_CHAR = unichr(10003).encode('utf-8')
 WRONG_CHAR = unichr(215).encode('utf-8')
 
-# colored messages
+# colored messages   BOLD = '\033[1m'    '\033[94m'      8593
 UP = '{}{}{} Bigger {}'.format(bcolors.BOLD, bcolors.OKBLUE, UP_CHAR, bcolors.ENDC)
 DOWN = '{}{}{} Smaller{}'.format(bcolors.BOLD, bcolors.FAIL, DOWN_CHAR, bcolors.ENDC)
 RIGHT = '{}{}{} Right {}'.format(bcolors.BOLD, bcolors.OKBLUE, RIGHT_CHAR, bcolors.ENDC)
 WRONG = '{}{}{} Wrong {}'.format(bcolors.BOLD, bcolors.FAIL, WRONG_CHAR, bcolors.ENDC)
 
 
+def parse_options():
+  usage = "usage: $prog [options]"
+  parser = OptionParser(usage)
+  parser.add_option('-c', "--create", dest="create_input_file", action="store_true", default=False,
+                    help="create the input file from data in the database")
+  parser.add_option('-f', "--file", dest="input_filename", default="{}/input_data.csv".format(MODEL_INPUT_FILES_DIR),
+                    help="specify the fully qualified path to a CSV filename to use as input data")
+  (options, args) = parser.parse_args()
+  return options, args
+
 if __name__ == "__main__":
+  options, args = parse_options()
+  create_input_file = options.create_input_file
+  input_filename = options.input_filename
+
   # create the 'model_output_files' directory and copy the model template
   # file into the 'model_output_files' directory and rename it
   create_output_directory(fq_model_template_filename=FQ_MODEL_TEMPLATE_FILENAME,
@@ -634,23 +650,27 @@ if __name__ == "__main__":
   # if the input data file does not exist, get the data from
   # the Django server and cache it in a local CSV file in
   # the 'model_input_files' directory
-  cache_input_data_file(fq_input_filename=FQ_INPUT_FILENAME,
-                        exchange=EXCHANGE,
-                        market=SMARKET,
-                        data_table=DATA_TABLE,
-                        start=START_DATE,
-                        end=END_DATE,
-                        time_units=CANDLESTICK_SIZE,
-                        host=DJANGO_SERVER,
-                        port=8000)
+  if create_input_file:
+    cache_input_data_file(fq_input_filename=input_filename,
+                          exchange=EXCHANGE,
+                          market=SMARKET,
+                          data_table=DATA_TABLE,
+                          start=START_DATE,
+                          end=END_DATE,
+                          time_units=CANDLESTICK_SIZE,
+                          host=DJANGO_SERVER,
+                          port=8000)
 
   # read the input data file into local variables, so the
   # nupic predictor can use them to make its predictions
-  read_input_file(fq_input_filename=FQ_INPUT_FILENAME)
+  if file_exists(input_filename):
+    read_input_file(fq_input_filename=input_filename)
+  else:
+    raise ValueError("Filename '{}' does not exist".format(input_filename))
 
   # run the Nupic predictor, make the predictions, and
   # save the results to the 'model_output_files' directory
-  run_the_predictor(fq_input_filename=FQ_INPUT_FILENAME,
+  run_the_predictor(fq_input_filename=input_filename,
                     fq_model_filename=FQ_MODEL_FILENAME,
                     fq_results_filename=FQ_RESULTS_FILENAME)
 
