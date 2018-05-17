@@ -65,7 +65,7 @@ modelParams:
       consumption:
         fieldname: consumption
         name: consumption
-        resolution: 0.88
+        resolution: 0.01
         seed: 1
         type: RandomDistributedScalarEncoder
       timestamp_timeOfDay:
@@ -170,9 +170,9 @@ modelParams:
   clParams:
     verbosity: 0
     regionName: SDRClassifierRegion
-    alpha: 0.1
-    steps: '1'
-    maxCategoryCount: 1000
+    alpha: 0.001
+    steps: ['1', '2', '3', '4', '5', '6', '7', '8']
+    maxCategoryCount: 10000
     implementation: cpp
 
   # If set, don't create the SP network unless the user requests SP metrics.

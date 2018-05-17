@@ -175,7 +175,7 @@ def create_output_directory(fq_model_template_filename, fq_model_filename, model
   shutil.copymode(src=fq_model_template_filename, dst=fq_model_filename)
 
 
-def cache_input_data_file(fq_input_filename, exchange, market, data_table, start, end, time_units, username='mellertson', password='test', host='localhost', port=8000):
+def cache_input_data_file(fq_input_filename, exchange, market, data_table, start, end, time_units, username='mellertson', password='test', host='localhost', port=8000,):
   """
   Get data from Django web-service, creating the input file if it does not exist
 
@@ -222,9 +222,6 @@ def cache_input_data_file(fq_input_filename, exchange, market, data_table, start
   response = requests.get(base_url, params=params, timeout=60*60)
   data = json.loads(response.content.decode('utf-8'))
 
-  # HIGH: re-write get_data()', so it saves the input data file to a more correct (a.k.a. generic) file name
-  # HIGH: create a new function, so it tranforms the input data and saves it to a more correct (a.k.a. specific) file name
-
   # write the lines of data
   lines = []
   for i, row in enumerate(data):
@@ -237,13 +234,80 @@ def cache_input_data_file(fq_input_filename, exchange, market, data_table, start
     ask_size = float(row['ask_size'])
     timestamp = parser.parse(row['timestamp'])
     try:
-      value_to_predict = (ask_price - bid_price) / ask_price * 100.0
+      value_to_predict = (ask_price - bid_price)
     except ZeroDivisionError:
       value_to_predict = 0.0
 
     # # add the actual value and timestamp to the global variables
     # timestamps.append(timestamp)
     # actuals.append(value_to_predict)
+
+    # add the line we just built to 'lines' for output in a moment
+    lines.append('{}, {:.15}\n'.format(timestamp.strftime("%Y-%m-%d %H:%M:%S.%f"), value_to_predict))
+
+  # save 'lines' to the CSV file
+  with open(fq_input_filename, 'a+') as f:
+    f.writelines(lines)
+
+
+def cache_input_data_file_2(fq_input_filename, exchange, market, data_table, start, end, time_units, username='mellertson', password='test', host='localhost', port=8000, market2=None):
+  """
+  Get data from Django web-service, creating the input file if it does not exist
+
+  :param fq_input_filename: The CSV file containing the input data to run through the Nupic model
+  :type fq_input_filename: str
+  :param exchange:
+  :type exchange: str
+  :param market:
+  :type market: str
+  :param market2:
+  :type market2: str
+  :param data_table: The Django data model (table name) the data originates from
+  :type data_table: str
+  :param start:
+  :type start: datetime
+  :param end:
+  :type end: datetime
+  :param time_units: '1m' | '5m' | '1h' | '1d'
+  :type time_units: str
+  :param username:
+  :type username: str
+  :param password:
+  :type password: str
+  :param host:
+  :type host: str
+  :param port:
+  :type port: int
+  :return:
+  """
+
+  # local variables
+  global ACTUALS
+
+  # Create the input file, over-writing it if it exists
+  initialize_csv(fq_input_filename=fq_input_filename)
+
+  # build the base url
+  base_url = 'http://{}:{}/ws/data/get'.format(host, port)
+
+  # build the input variables needed by the web-service
+  params1 = {'username': username, 'passwd': password, 'exchange': exchange, 'symbol': market, 'data_table': data_table, 'start': start, 'end': end, 'time_units': time_units}
+  params2 = {'username': username, 'passwd': password, 'exchange': exchange, 'symbol': market2, 'data_table': data_table, 'start': start, 'end': end, 'time_units': time_units}
+
+  # send the HTTP request and decode the JSON response
+  response1 = requests.get(base_url, params=params1, timeout=60*60)
+  response2 = requests.get(base_url, params=params2, timeout=60*60)
+  data1 = json.loads(response1.content.decode('utf-8'))
+  data2 = json.loads(response2.content.decode('utf-8'))
+
+  # write the lines of data
+  lines = []
+  for i, row in enumerate(data1):
+    # extract the variables from the row
+    m1_price = (float(row['ask_price']) + float(row['bid_price'])) / 2.0
+    m2_price = (float(data2[i]['ask_price']) + float(data2[i]['bid_price'])) / 2.0
+    timestamp = parser.parse(row['timestamp'])
+    value_to_predict = m1_price - m2_price
 
     # add the line we just built to 'lines' for output in a moment
     lines.append('{}, {:.15}\n'.format(timestamp.strftime("%Y-%m-%d %H:%M:%S.%f"), value_to_predict))
@@ -473,7 +537,7 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename)
   global UP
   global DOWN
   global EXCHANGE
-  global SMARKET
+  global BASE_DIR
 
   last_actual = 0.0
   last_prediction = 0.0
@@ -500,8 +564,7 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename)
 
   with open(fq_results_filename, 'w+') as out_file:
     # output results file header
-    header = 'Nupic Predicting Spread Between {} and {} on Bitmex\n\n'.format(NMARKET, MARKET2)
-    header += ' '.join(['Row', 'Timestamp',
+    header = ','.join(['Row', 'Timestamp',
               'Actual', 'Actual Change', 'Actual Direction',
               'Prediction', 'Predicted Change', 'Predicted Direction',
               'Correct', 'Score',
@@ -529,16 +592,22 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename)
 
       ###################################################################################################
       # calculate the actual direction VS predicted direction
+      actual_dir_colored = "who knows"
+      predicted_dir_colored = "who knows"
+      correct_colored = "who knows"
       if iteration > 0:
-        actual_dir = '{}'.format(UP) if actual_change > 0 else '{}'.format(DOWN)
-        predicted_dir = '{}'.format(UP) if predicted_change > 0 else '{}'.format(DOWN)
-        correct = '{}'.format(RIGHT) if actual_dir == predicted_dir else '{}'.format(WRONG)
+        actual_dir_colored = '{}'.format(UP) if actual_change > 0 else '{}'.format(DOWN)
+        predicted_dir_colored = '{}'.format(UP) if predicted_change > 0 else '{}'.format(DOWN)
+        correct_colored = '{}'.format(RIGHT) if actual_dir_colored == predicted_dir_colored else '{}'.format(WRONG)
+        actual_dir = '{}'.format('Up') if actual_change > 0 else '{}'.format('Down')
+        predicted_dir = '{}'.format('Up') if predicted_change > 0 else '{}'.format('Down')
+        correct = '{}'.format('Right') if actual_dir == predicted_dir else '{}'.format('Wrong')
       else:
         correct = predicted_dir = actual_dir = '          '
 
       # store the actual and prediction
       all_results.append({'actual': actual, 'prediction': prediction, 'error': error})
-      scores.append(1.0 if correct == RIGHT else 0.0)
+      scores.append(1.0 if correct == 'Right' else 0.0)
 
       # calculate the average percent error of the prediction
       avg_pct_error = 0.0
@@ -553,43 +622,45 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename)
       # print out results
       row = '{}'.format(iteration + 1).rjust(row_col_len, ' ')
       msg = "Row {}:\t{}\t".format(row, TIMESTAMPS[iteration])
-      msg += "actual value:{:11.8f} {:12.4f}% {}\t".format(actual, actual_change, actual_dir)
-      msg += "predicted value:{:11.8f} {:12.4f}% {}\t".format(prediction, predicted_change, predicted_dir)
-      msg += "{}\t".format(correct)
+      msg += "actual value:{:11.8f} {:12.4f}% {}\t".format(actual, actual_change, actual_dir_colored)
+      msg += "predicted value:{:11.8f} {:12.4f}% {}\t".format(prediction, predicted_change, predicted_dir_colored)
+      msg += "{}\t".format(correct_colored)
       msg += "score: {:.2f}%\t".format(score)
       msg += "error: {:.2f}%\t".format(avg_pct_error)
       msg += "confidence: {:.2f}%\t".format(oneStepConfidence * 100)
       print(msg)
 
       # Write results to output file
-      row = '{}'.format(iteration + 1).rjust(row_col_len, ' ')
-      msg = "{}, {}, ".format(row, TIMESTAMPS[iteration])
-      msg += "{:11.8f}, {:12.4f}%, {}, ".format(actual, actual_change, actual_dir)
-      msg += "{:11.8f}, {:12.4f}%, {}, ".format(prediction, predicted_change, predicted_dir)
-      msg += "{}, ".format(correct)
-      msg += "{:.2f}%, ".format(score)
-      msg += "{:.2f}%, ".format(avg_pct_error)
-      msg += "{:.2f}%".format(oneStepConfidence * 100)
+      msg = "{},{},".format(iteration + 1, TIMESTAMPS[iteration])
+      msg += "{:.8f},{:.4f},{},".format(actual, actual_change, actual_dir)
+      msg += "{:.8f},{:.4f},{},".format(prediction, predicted_change, predicted_dir)
+      msg += "{},".format(correct)
+      msg += "{:.1f},".format(score)
+      msg += "{:.2f},".format(avg_pct_error)
+      msg += "{:.8f}".format(oneStepConfidence * 100)
+      if iteration == 0:
+        msg = msg.replace('          ', '')
       out_file.write(msg + '\n')
 
       # store values for next iteration
       last_actual = actual
       # last_prediction = prediction
 
+  # copy the results file, so it can be plotted
+  shutil.copyfile(fq_results_filename, os.path.join(BASE_DIR, 'results.csv'))
 
-# TODO: create function to compress data files into a TAR.GZ file
 
+global EXPERIMENT_NAME, INPUT_FILENAME, RESULTS_FILENAME, MODEL_FILENAME, BASE_DIR, MODEL_INPUT_FILES_DIR
+global MODEL_OUTPUT_FILES_DIR, FQ_RESULTS_FILENAME, FQ_MODEL_FILENAME, FQ_MODEL_TEMPLATE_FILENAME
 
 # Input variables into the system
-DJANGO_SERVER = 'codehammer' # 'test.macmini.binarycapital.io'
 EXCHANGE = 'bitmex'
-SMARKET = 'BTC/USD'.lower()
 NMARKET = 'XBTM18'.lower()
 MARKET2 = 'XBTUSD'.lower()
 DATA_TABLE = 'quote'
-SUFFIX_NAME = 'bid.ask.price.spread-maxAge10-globDecay1.0'
+SUFFIX_NAME = 'bid.ask.spread-as-pct-change'
 CURRENT_DATE_TIME = datetime.now().strftime("%Y.%m.%d.%I.%M.%p").lower()
-CANDLESTICK_SIZE = '5m' # 1m = 1 minute, 5m = 5 minutes
+CANDLESTICK_SIZE = '1h' # 1m = 1 minute, 5m = 5 minutes
 START_DATE = datetime(2015, 10, 1, tzinfo=pytz.utc)
 END_DATE = datetime(2018, 4, 1, tzinfo=pytz.utc)
 DATA_POINTS = int((END_DATE - START_DATE).total_seconds() / 60 / 5) + 1
@@ -627,19 +698,72 @@ WRONG = '{}{}{} Wrong {}'.format(bcolors.BOLD, bcolors.FAIL, WRONG_CHAR, bcolors
 
 
 def parse_options():
+  """
+  Parse command line options and return them
+
+  Valid command line options are:
+    '-c' or "--create" - create the input file from data in the database
+    '-f' or "--file"   - specify the fully qualified path to a CSV filename to use as input data
+    '-s' or "--start"  - the start date to get data from, defaults to 10/01/2015
+    '-e' or "--end"    - the end date to get data till, defaults to 04/01/2018"
+    '-d' or "--server" - the name of the Django server to get the data from
+    '-p' or "--port"   - (default = 80) the port number the Django server is running on
+    '-m' or "--market" - the market symbol
+    '-F' or "--future" - the second market to calculate the spread from
+
+  :returns: (options, args)
+  :rtype: tuple
+  """
+
   usage = "usage: $prog [options]"
   parser = OptionParser(usage)
   parser.add_option('-c', "--create", dest="create_input_file", action="store_true", default=False,
                     help="create the input file from data in the database")
   parser.add_option('-f', "--file", dest="input_filename", default="{}/input_data.csv".format(MODEL_INPUT_FILES_DIR),
                     help="specify the fully qualified path to a CSV filename to use as input data")
+  parser.add_option('-s', "--start", dest="start", default="2015-10-01",
+                    help="the start date to get data from, defaults to 10/01/2015")
+  parser.add_option('-e', "--end", dest="end", default="2018-4-01",
+                    help="the end date to get data till, defaults to 04/01/2018")
+  parser.add_option('-d', "--server", dest="server_name", default="codehammer",
+                    help="the name of the Django server to get the data from")
+  parser.add_option('-p', "--port", dest="server_port", default="80",
+                    help="(default = 80) the port number the Django server is running on")
+  parser.add_option('-m', "--market", dest="market1", default="BTC/USD",
+                    help="(default = BTC/USD) the market symbol")
+  parser.add_option('-F', "--future", dest="market2", default=None,
+                    help="the second market to calculate the spread from")
+
   (options, args) = parser.parse_args()
   return options, args
 
+
 if __name__ == "__main__":
+
   options, args = parse_options()
   create_input_file = options.create_input_file
   input_filename = options.input_filename
+  start = parser.parse(options.start)
+  end = parser.parse(options.end)
+  django_server = options.server_name
+  django_port = options.server_port
+  market1_symbol = options.market1
+  future_symbol = options.market2
+
+  # INPUT and OUTPUT file names
+  nmarket = market1_symbol.lower().replace('/', '')
+  EXPERIMENT_NAME = '{}.{}.{}.{}.{}'.format(CURRENT_DATE_TIME, EXCHANGE, nmarket, DATA_TABLE, SUFFIX_NAME)
+  INPUT_FILENAME = '{}.{}.{}.csv'.format(EXCHANGE, nmarket, DATA_TABLE)
+  RESULTS_FILENAME = '{}.results.csv'.format(EXPERIMENT_NAME)
+  MODEL_FILENAME = '{}.model.yaml'.format(EXPERIMENT_NAME)
+
+  # INPUT and OUTPUT directory names
+  BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+  MODEL_INPUT_FILES_DIR = os.path.join(BASE_DIR, 'model_input_files')
+  MODEL_OUTPUT_FILES_DIR = os.path.join(BASE_DIR, 'model_output_files/{}'.format(EXPERIMENT_NAME))
+  FQ_RESULTS_FILENAME = os.path.join(MODEL_OUTPUT_FILES_DIR, RESULTS_FILENAME)
+  FQ_MODEL_FILENAME = os.path.join(MODEL_OUTPUT_FILES_DIR, MODEL_FILENAME)
+  FQ_MODEL_TEMPLATE_FILENAME = os.path.join(MODEL_INPUT_FILES_DIR, "model-template.yaml")
 
   # create the 'model_output_files' directory and copy the model template
   # file into the 'model_output_files' directory and rename it
@@ -651,15 +775,27 @@ if __name__ == "__main__":
   # the Django server and cache it in a local CSV file in
   # the 'model_input_files' directory
   if create_input_file:
-    cache_input_data_file(fq_input_filename=input_filename,
-                          exchange=EXCHANGE,
-                          market=SMARKET,
-                          data_table=DATA_TABLE,
-                          start=START_DATE,
-                          end=END_DATE,
-                          time_units=CANDLESTICK_SIZE,
-                          host=DJANGO_SERVER,
-                          port=8000)
+    if future_symbol is None:
+      cache_input_data_file(fq_input_filename=input_filename,
+                            exchange=EXCHANGE,
+                            market=market1_symbol,
+                            data_table=DATA_TABLE,
+                            start=start,
+                            end=end,
+                            time_units=CANDLESTICK_SIZE,
+                            host=django_server,
+                            port=django_port)
+    else:
+      cache_input_data_file_2(fq_input_filename=input_filename,
+                              exchange=EXCHANGE,
+                              market=market1_symbol,
+                              data_table=DATA_TABLE,
+                              start=start,
+                              end=end,
+                              time_units=CANDLESTICK_SIZE,
+                              host=django_server,
+                              port=django_port,
+                              market2=future_symbol)
 
   # read the input data file into local variables, so the
   # nupic predictor can use them to make its predictions
