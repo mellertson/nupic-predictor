@@ -95,11 +95,12 @@ def initialize_csv(fq_input_filename):
   :type fq_input_filename: str
   :rtype: None
   """
+
   # write the headers
   lines = list()
-  lines.append('timestamp, consumption\n')
-  lines.append('datetime, float\n')
-  lines.append('T, \n')
+  lines.append('timestamp, spread, target_value, m1_ask, m1_ask_size, m1_bid, m1_bid_size, m2_ask, m2_ask_size, m2_bid, m2_bid_size\n')
+  lines.append('datetime, float, int, float, float, float, float, float, float, float, float\n')
+  lines.append('T, , , , , , , , , ,\n')
 
   # save the data to a .csv file
   with open(fq_input_filename, 'w') as f:
@@ -298,27 +299,62 @@ def cache_input_data_file_2(fq_input_filename, exchange, market, data_table, sta
   # send the HTTP request and decode the JSON response
   response1 = requests.get(base_url, params=params1, timeout=60*60)
   response2 = requests.get(base_url, params=params2, timeout=60*60)
-  # data1 = json.loads(response1.content.decode('utf-8'))
-  # data2 = json.loads(response2.content.decode('utf-8'))
   data1 = pd.read_json(response1.content, orient='index', precise_float=True)
   data2 = pd.read_json(response2.content, orient='index', precise_float=True)
 
   # write the lines of data
   lines = []
+  m2_last_bid = m2_last_ask = m2_last = 0.0
+  m2_ask_size = m2_bid_size = 0.0
   for ts, row in data1.iterrows():
-
     # extract the variables from the row
-    m1_price = (float(row['ask_price']) + float(row['bid_price'])) / 2.0
-    try:
-      m2_price = (float(data2.loc[ts]['ask_price']) + float(data2.loc[ts]['bid_price'])) / 2.0
-    except KeyError:
-      m2_price = m1_price
-    value_to_predict = (m1_price - m2_price) / m1_price * 100.0 if m1_price != 0.0 else 0.0
-    if value_to_predict == 0.0:
+    m1_ask = float(row['ask_price']) # * float(row['ask_size'])
+    m1_ask_size = float(row['ask_size']) # * float(row['ask_size'])
+    m1_bid = float(row['bid_price']) # * float(row['bid_size'])
+    m1_bid_size = float(row['bid_size']) # * float(row['bid_size'])
+    m1_value = (m1_ask + m1_bid) / 2.0
+    if ts in data2.index:
+      m2_ask = float(data2.loc[ts]['ask_price']) # * float(data2.loc[ts]['ask_size'])
+      m2_ask_size = float(data2.loc[ts]['ask_size']) # * float(data2.loc[ts]['ask_size'])
+      m2_bid = float(data2.loc[ts]['bid_price']) # * float(data2.loc[ts]['bid_size'])
+      m2_bid_size = float(data2.loc[ts]['bid_size']) # * float(data2.loc[ts]['bid_size'])
+      m2_value = (m2_ask + m2_bid) / 2.0
+    else:
+      m2_ask = m2_last_ask
+      m2_bid = m2_last_bid
+      m2_value = m2_last
+
+    # calculate the spread
+    if m1_value > m2_value:
+      spread = (m1_ask - m2_bid) / m1_ask * 100.0 if m1_ask != 0.0 else 0.0
+    elif m1_value < m2_value:
+      spread = (m2_ask - m1_bid) / m2_ask * 100.0 if m2_ask != 0.0 else 0.0
+    else:
+      spread = 0.0
+    if spread == 0.0:
       continue
 
+    # calculate the target value
+    if spread >= 2.0:
+      target_value = '5'
+    elif spread < 2.0 and spread >= 1.0:
+      target_value = '4'
+    elif spread < 1.0 and spread > -1.0:
+      target_value = '3'
+    elif spread <= -1.0 and spread > -2.0:
+      target_value = '2'
+    else:
+      target_value = '1'
+
     # add the line we just built to 'lines' for output in a moment
-    lines.append('{}, {:.15}\n'.format(ts.strftime("%Y-%m-%d %H:%M:%S.%f"), value_to_predict))
+    # if isinstance(target_value, float):
+    #   lines.append('{}, {:.15}\n'.format(ts.strftime("%Y-%m-%d %H:%M:%S.%f"), spread, target_value))
+    # else:
+    lines.append('{}, {:.2f}, {}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}\n'.format(ts.strftime("%Y-%m-%d %H:%M:%S.%f"), spread, target_value, m1_ask, m1_ask_size, m1_bid, m1_bid_size, m2_ask, m2_ask_size, m2_bid, m2_bid_size))
+
+    m2_last_ask = m2_ask
+    m2_last_bid = m2_bid
+    m2_last = m2_value
 
   # save 'lines' to the CSV file
   with open(fq_input_filename, 'a+') as f:
@@ -514,7 +550,7 @@ def configureNetwork(network):
   :rtype: None
   """
   # Set predicted field.
-  network.regions["sensor"].setParameter("predictedField", "consumption")
+  network.regions["sensor"].setParameter("predictedField", "target_value")
 
   # Enable learning for all regions.
   network.regions["SP"].setParameter("learningMode", 1)
@@ -570,12 +606,13 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename)
   ACTUALS.append(0.0)
   TIMESTAMPS.append(TIMESTAMPS[-1] + timedelta(minutes=5))
 
+  print('Saving results to "{}"'.format(fq_results_filename))
   with open(fq_results_filename, 'w+') as out_file:
     # output results file header
     header = ','.join(['Row', 'Timestamp',
-              'Actual', 'Actual Change', 'Actual Direction',
-              'Prediction', 'Predicted Change', 'Predicted Direction',
-              'Correct', 'Score',
+              'Actual', # 'Actual Change', 'Actual Direction',
+              'Prediction', # 'Predicted Change', 'Predicted Direction',
+              # 'Correct', 'Score',
               'Error', 'Confidence'])
     header += '\n'
     out_file.write(header)
@@ -590,6 +627,10 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename)
       # extract the prediction
       predictionResults = getPredictionResults(network, "classifier")
       prediction = predictionResults[1]["predictedValue"]
+      prediction2 = predictionResults[2]["predictedValue"]
+      prediction3 = predictionResults[3]["predictedValue"]
+      prediction4 = predictionResults[4]["predictedValue"]
+      prediction5 = predictionResults[5]["predictedValue"]
       oneStepConfidence = predictionResults[1]["predictionConfidence"]
 
       ###################################################################################################
@@ -625,26 +666,34 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename)
       avg_pct_error = avg_pct_error / len(all_results)
 
       # calculate the current score
-      score = sum(scores) / len(scores) * 100
+      # score = sum(scores) / len(scores) * 100
 
       # print out results
       row = '{}'.format(iteration + 1).rjust(row_col_len, ' ')
       msg = "Row {}:\t{}\t".format(row, TIMESTAMPS[iteration])
-      msg += "actual value:{:14.8f} {:12.4f}% {}\t".format(actual, actual_change, actual_dir_colored)
-      msg += "predicted value:{:14.8f} {:12.4f}% {}\t".format(prediction, predicted_change, predicted_dir_colored)
-      msg += "{}\t".format(correct_colored)
-      msg += "score: {:.2f}%\t".format(score)
-      msg += "error: {:.2f}%\t".format(avg_pct_error)
+      msg += "actual value:{:14.8f}\t".format(actual)
+      msg += "predicted values:{:14.8f}\t".format(prediction)
+      msg += "{:14.8f}\t".format(prediction2)
+      msg += "{:14.8f}\t".format(prediction3)
+      msg += "{:14.8f}\t".format(prediction4)
+      msg += "{:14.8f}\t".format(prediction5)
+      # msg += "{}\t".format(correct_colored)
+      # msg += "score: {:.2f}%\t".format(score)
+      # msg += "error: {:.2f}%\t".format(avg_pct_error)
       msg += "confidence: {:.2f}%\t".format(oneStepConfidence * 100)
       print(msg)
 
       # Write results to output file
       msg = "{},{},".format(iteration + 1, TIMESTAMPS[iteration])
-      msg += "{:.8f},{:.4f},{},".format(actual, actual_change, actual_dir)
-      msg += "{:.8f},{:.4f},{},".format(prediction, predicted_change, predicted_dir)
-      msg += "{},".format(correct)
-      msg += "{:.1f},".format(score)
-      msg += "{:.2f},".format(avg_pct_error)
+      msg += "{:.8f},".format(actual)
+      msg += "{:.8f},".format(prediction)
+      msg += "{:.8f},".format(prediction2)
+      msg += "{:.8f},".format(prediction3)
+      msg += "{:.8f},".format(prediction4)
+      msg += "{:.8f},".format(prediction5)
+      # msg += "{},".format(correct)
+      # msg += "{:.1f},".format(score)
+      # msg += "{:.2f},".format(avg_pct_error)
       msg += "{:.8f}".format(oneStepConfidence * 100)
       if iteration == 0:
         msg = msg.replace('          ', '')
@@ -655,7 +704,7 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename)
       # last_prediction = prediction
 
   # copy the results file, so it can be plotted
-  shutil.copyfile(fq_results_filename, os.path.join(BASE_DIR, 'results.csv'))
+  # shutil.copyfile(fq_results_filename, os.path.join(BASE_DIR, 'results.csv'))
 
 
 global EXPERIMENT_NAME, INPUT_FILENAME, RESULTS_FILENAME, MODEL_FILENAME, BASE_DIR, MODEL_INPUT_FILES_DIR

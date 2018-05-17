@@ -25,20 +25,12 @@ aggregationInfo:
   # aggregation function (e.g. sum). The function will be used to aggregate
   # multiple values of this field over the aggregation period.
   fields:
-  - [spread, mean]
-  - [m1_ask, mean]
-  - [m1_ask_size, mean]
-  - [m1_bid, mean]
-  - [m1_bid_size, mean]
-  - [m2_ask, mean]
-  - [m2_ask_size, mean]
-  - [m2_bid, mean]
-  - [m2_bid_size, mean]
-  - [target_value, mean]
+  - [spread, last]
+  - [target_value, last]
   # If a time unit is not listed, 0 will be its default value.
   microseconds: 0
   milliseconds: 0
-  minutes: 0
+  minutes: 5
   months: 0
   seconds: 0
   hours: 0
@@ -46,7 +38,7 @@ aggregationInfo:
   weeks: 0
   years: 0
 
-predictAheadTime: True
+predictAheadTime: null
 
 # Parameters of the model to be created.
 modelParams:
@@ -76,54 +68,6 @@ modelParams:
         name: spread
         resolution: 0.01
         seed: 1
-        type: RandomDistributedScalarEncoder
-      m1_ask:
-        fieldname: m1_ask
-        name: m1_ask
-        resolution: 0.01
-        seed: 1
-        type: RandomDistributedScalarEncoder
-      m1_ask_size:
-        fieldname: m1_ask_size
-        name: m1_ask_size
-        resolution: 0.01
-        seed: 5
-        type: RandomDistributedScalarEncoder
-      m1_bid:
-        fieldname: m1_bid
-        name: m1_bid
-        resolution: 0.01
-        seed: 129
-        type: RandomDistributedScalarEncoder
-      m1_bid_size:
-        fieldname: m1_bid_size
-        name: m1_bid_size
-        resolution: 0.01
-        seed: 902
-        type: RandomDistributedScalarEncoder
-      m2_ask:
-        fieldname: m2_ask
-        name: m2_ask
-        resolution: 0.01
-        seed: 69
-        type: RandomDistributedScalarEncoder
-      m2_ask_size:
-        fieldname: m2_ask_size
-        name: m2_ask_size
-        resolution: 0.01
-        seed: 73
-        type: RandomDistributedScalarEncoder
-      m2_bid:
-        fieldname: m2_bid
-        name: m2_bid
-        resolution: 0.01
-        seed: 420
-        type: RandomDistributedScalarEncoder
-      m2_bid_size:
-        fieldname: m2_bid_size
-        name: m2_bid_size
-        resolution: 0.01
-        seed: 1973
         type: RandomDistributedScalarEncoder
       target_value:
         fieldname: target_value
@@ -234,7 +178,7 @@ modelParams:
     verbosity: 0
     regionName: SDRClassifierRegion
     alpha: 0.001
-    steps: '1,2,3,4,5'
+    steps: '1'
     maxCategoryCount: 5
     implementation: cpp
 
