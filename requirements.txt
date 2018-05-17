@@ -12,6 +12,7 @@ numpy==1.12.1
 nupic==1.0.4
 nupic.bindings==1.0.4
 ordereddict==1.1
+pandas
 prettytable==0.7.2
 psutil==1.0.1
 py==1.5.3

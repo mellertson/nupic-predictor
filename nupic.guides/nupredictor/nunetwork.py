@@ -13,6 +13,7 @@ from nupic.data.file_record_stream import FileRecordStream
 # from cerebro2.patcher import Patcher
 import urllib
 from optparse import OptionParser
+import pandas as pd
 
 
 class bcolors(object):
@@ -297,20 +298,27 @@ def cache_input_data_file_2(fq_input_filename, exchange, market, data_table, sta
   # send the HTTP request and decode the JSON response
   response1 = requests.get(base_url, params=params1, timeout=60*60)
   response2 = requests.get(base_url, params=params2, timeout=60*60)
-  data1 = json.loads(response1.content.decode('utf-8'))
-  data2 = json.loads(response2.content.decode('utf-8'))
+  # data1 = json.loads(response1.content.decode('utf-8'))
+  # data2 = json.loads(response2.content.decode('utf-8'))
+  data1 = pd.read_json(response1.content, orient='index', precise_float=True)
+  data2 = pd.read_json(response2.content, orient='index', precise_float=True)
 
   # write the lines of data
   lines = []
-  for i, row in enumerate(data1):
+  for ts, row in data1.iterrows():
+
     # extract the variables from the row
     m1_price = (float(row['ask_price']) + float(row['bid_price'])) / 2.0
-    m2_price = (float(data2[i]['ask_price']) + float(data2[i]['bid_price'])) / 2.0
-    timestamp = parser.parse(row['timestamp'])
-    value_to_predict = m1_price - m2_price
+    try:
+      m2_price = (float(data2.loc[ts]['ask_price']) + float(data2.loc[ts]['bid_price'])) / 2.0
+    except KeyError:
+      m2_price = m1_price
+    value_to_predict = (m1_price - m2_price) / m1_price * 100.0 if m1_price != 0.0 else 0.0
+    if value_to_predict == 0.0:
+      continue
 
     # add the line we just built to 'lines' for output in a moment
-    lines.append('{}, {:.15}\n'.format(timestamp.strftime("%Y-%m-%d %H:%M:%S.%f"), value_to_predict))
+    lines.append('{}, {:.15}\n'.format(ts.strftime("%Y-%m-%d %H:%M:%S.%f"), value_to_predict))
 
   # save 'lines' to the CSV file
   with open(fq_input_filename, 'a+') as f:
@@ -622,8 +630,8 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename)
       # print out results
       row = '{}'.format(iteration + 1).rjust(row_col_len, ' ')
       msg = "Row {}:\t{}\t".format(row, TIMESTAMPS[iteration])
-      msg += "actual value:{:11.8f} {:12.4f}% {}\t".format(actual, actual_change, actual_dir_colored)
-      msg += "predicted value:{:11.8f} {:12.4f}% {}\t".format(prediction, predicted_change, predicted_dir_colored)
+      msg += "actual value:{:14.8f} {:12.4f}% {}\t".format(actual, actual_change, actual_dir_colored)
+      msg += "predicted value:{:14.8f} {:12.4f}% {}\t".format(prediction, predicted_change, predicted_dir_colored)
       msg += "{}\t".format(correct_colored)
       msg += "score: {:.2f}%\t".format(score)
       msg += "error: {:.2f}%\t".format(avg_pct_error)
@@ -660,7 +668,7 @@ MARKET2 = 'XBTUSD'.lower()
 DATA_TABLE = 'quote'
 SUFFIX_NAME = 'bid.ask.spread-as-pct-change'
 CURRENT_DATE_TIME = datetime.now().strftime("%Y.%m.%d.%I.%M.%p").lower()
-CANDLESTICK_SIZE = '1h' # 1m = 1 minute, 5m = 5 minutes
+# CANDLESTICK_SIZE = '1h' # 1m = 1 minute, 5m = 5 minutes
 START_DATE = datetime(2015, 10, 1, tzinfo=pytz.utc)
 END_DATE = datetime(2018, 4, 1, tzinfo=pytz.utc)
 DATA_POINTS = int((END_DATE - START_DATE).total_seconds() / 60 / 5) + 1
@@ -710,6 +718,7 @@ def parse_options():
     '-p' or "--port"   - (default = 80) the port number the Django server is running on
     '-m' or "--market" - the market symbol
     '-F' or "--future" - the second market to calculate the spread from
+    '-t' or "--time_units" - the time units, either: "1m", "5m", "1h", "1d"
 
   :returns: (options, args)
   :rtype: tuple
@@ -733,6 +742,8 @@ def parse_options():
                     help="(default = BTC/USD) the market symbol")
   parser.add_option('-F', "--future", dest="market2", default=None,
                     help="the second market to calculate the spread from")
+  parser.add_option('-t', "--time_units", dest="time_units", default='5m',
+                    help='the time units, either: "1m", "5m", "1h", "1d"')
 
   (options, args) = parser.parse_args()
   return options, args
@@ -749,6 +760,7 @@ if __name__ == "__main__":
   django_port = options.server_port
   market1_symbol = options.market1
   future_symbol = options.market2
+  time_units = options.time_units
 
   # INPUT and OUTPUT file names
   nmarket = market1_symbol.lower().replace('/', '')
@@ -782,7 +794,7 @@ if __name__ == "__main__":
                             data_table=DATA_TABLE,
                             start=start,
                             end=end,
-                            time_units=CANDLESTICK_SIZE,
+                            time_units=time_units,
                             host=django_server,
                             port=django_port)
     else:
@@ -792,7 +804,7 @@ if __name__ == "__main__":
                               data_table=DATA_TABLE,
                               start=start,
                               end=end,
-                              time_units=CANDLESTICK_SIZE,
+                              time_units=time_units,
                               host=django_server,
                               port=django_port,
                               market2=future_symbol)
@@ -809,6 +821,10 @@ if __name__ == "__main__":
   run_the_predictor(fq_input_filename=input_filename,
                     fq_model_filename=FQ_MODEL_FILENAME,
                     fq_results_filename=FQ_RESULTS_FILENAME)
+
+
+
+
 
 
 
