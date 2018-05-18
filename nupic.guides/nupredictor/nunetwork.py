@@ -1036,6 +1036,8 @@ if __name__ == "__main__":
   markets = options.markets
   time_units = options.time_units
   predicted_field = options.predicted_field
+  include_spread = True
+  include_classification = False
 
   # INPUT and OUTPUT file names
   market_symbols = markets.lower().replace('/', '').replace(';', '-')
@@ -1064,27 +1066,23 @@ if __name__ == "__main__":
   # the Django server and cache it in a local CSV file in
   # the 'model_input_files' directory
   if create_input_file:
-    if len(markets) == 1:
-      cache_input_data_file(fq_input_filename=input_filename,
-                            exchange=EXCHANGE,
-                            market=markets[0],
-                            data_table=DATA_TABLE,
-                            start=start,
-                            end=end,
-                            time_units=time_units,
-                            host=django_server,
-                            port=django_port)
-    else:
-      cache_input_data_file_2(fq_input_filename=input_filename,
-                              exchange=EXCHANGE,
-                              market=markets[0],
-                              data_table=DATA_TABLE,
-                              start=start,
-                              end=end,
-                              time_units=time_units,
-                              host=django_server,
-                              port=django_port,
-                              market2=markets[1])
+    market_data = fetch_market_data(exchange=EXCHANGE, markets=markets,
+                                    data_table=DATA_TABLE, time_units=time_units,
+                                    start=start, end=end,
+                                    host=django_server, port=django_port)
+    initialize_csv(input_filename, markets,
+                   include_spread=include_spread, include_classification=include_classification)
+    write_input_file(input_filename, markets, market_data,
+                     include_spread=include_spread, include_classification=include_classification)
+    cache_input_data_file(fq_input_filename=input_filename,
+                          exchange=EXCHANGE,
+                          market=markets[0],
+                          data_table=DATA_TABLE,
+                          start=start,
+                          end=end,
+                          time_units=time_units,
+                          host=django_server,
+                          port=django_port)
 
   # read the input data file into local variables, so the
   # nupic predictor can use them to make its predictions
