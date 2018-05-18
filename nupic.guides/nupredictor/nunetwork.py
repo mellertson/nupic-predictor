@@ -300,13 +300,11 @@ def write_input_file(fq_input_filename, markets, market_data, include_spread=Tru
   # save 'lines' to the CSV file
   with open(fq_input_filename, 'a+') as f:
     for market in markets:
-      i = 0
       for ts, row in market_data[market].iterrows():
-        line = []
+        line = list()
+
         # add the timestamp to the first column of the line
-        if i == 0:
-          line.append(ts.strftime("%Y-%m-%d %H:%M:%S.%f"))
-          i += 1
+        line.append(ts.strftime("%Y-%m-%d %H:%M:%S.%f"))
 
         # extract the variables from the row
         ask_price = float(row['ask_price'])
@@ -328,11 +326,10 @@ def write_input_file(fq_input_filename, markets, market_data, include_spread=Tru
           classification = 1
 
         # append the values to the line
-        if i == 0:
-          if include_spread:
-            line.append(str(spread))
-          if include_classification:
-            line.append(str(classification))
+        if include_spread:
+          line.append(str(spread))
+        if include_classification:
+          line.append(str(classification))
         line.append(str(ask_price))
         line.append(str(ask_size))
         line.append(str(bid_price))
