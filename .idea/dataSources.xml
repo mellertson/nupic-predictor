@@ -7,5 +7,11 @@
       <jdbc-driver>org.postgresql.Driver</jdbc-driver>
       <jdbc-url>jdbc:postgresql://db:5432/binarycapital</jdbc-url>
     </data-source>
+    <data-source source="LOCAL" name="test.binarycapital.io" uuid="5ca28109-b1dd-44c9-bc65-70d051cfdfa8">
+      <driver-ref>postgresql</driver-ref>
+      <synchronize>true</synchronize>
+      <jdbc-driver>org.postgresql.Driver</jdbc-driver>
+      <jdbc-url>jdbc:postgresql://mua:6209/binarycapital</jdbc-url>
+    </data-source>
   </component>
 </project>

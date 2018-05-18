@@ -314,8 +314,33 @@ def cache_input_data_file_2(fq_input_filename, exchange, market, data_table, sta
   # send the HTTP request and decode the JSON response
   response1 = requests.get(base_url, params=params1, timeout=60*60)
   response2 = requests.get(base_url, params=params2, timeout=60*60)
+
+  # verify there is at least 1 row of data in each data set
+  if response1.status_code != 200:
+    raise ValueError('No {}-{} data was found between {} and {} for {}'.format(exchange, market, start, end, time_units))
+  if response2.status_code != 200:
+    raise ValueError('No {}-{} data was found between {} and {} for {}'.format(exchange, market2, start, end, time_units))
+
   data1 = pd.read_json(response1.content, orient='index', precise_float=True)
   data2 = pd.read_json(response2.content, orient='index', precise_float=True)
+
+  # determine start and end dates of both data sets
+  data1_start = min(data1.index)
+  data1_end = max(data1.index)
+  data2_start = min(data2.index)
+  data2_end = max(data2.index)
+  s = max(data1_start, data2_start)
+  e = min(data1_end, data2_end)
+
+  # slice both data sets to the same range of dates
+  data1 = data1[s:e]
+  data2 = data2[s:e]
+
+  # verify there is at least 1 row of data in each data set
+  if len(data1) < 1:
+    raise ValueError('No {}-{} data was found between {} and {} for {}'.format(exchange, market, start, end, time_units))
+  if len(data2) < 1:
+    raise ValueError('No {}-{} data was found between {} and {} for {}'.format(exchange, market2, start, end, time_units))
 
   # write the lines of data
   lines = []
@@ -582,7 +607,7 @@ def disableLearning(network):
   network.regions["classifier"].setParameter("learningMode", 0)
 
 
-def configureNetwork(network):
+def configureNetwork(network, predicted_field):
   """
   Configure the Nupic network
 
@@ -593,10 +618,12 @@ def configureNetwork(network):
 
   :param network: A fully initialized Nupic model (a.k.a. Network)
   :type network: Network
+  :param predicted_field: The "fieldname", identified in the model parameters file, which will be predicted, e.g. "spread" or "m1_ask"
+  :type predicted_field: str
   :rtype: None
   """
   # Set predicted field.
-  network.regions["sensor"].setParameter("predictedField", "target_value")
+  network.regions["sensor"].setParameter("predictedField", predicted_field)
 
   # Enable learning for all regions.
   network.regions["SP"].setParameter("learningMode", 1)
@@ -609,7 +636,7 @@ def configureNetwork(network):
   network.regions["classifier"].setParameter("inferenceMode", 1)
 
 
-def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename):
+def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename, predicted_field):
   """
   run the Nupic predictor, save the results to the 'model_output_files' directory
 
@@ -619,6 +646,8 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename)
   :type fq_model_filename: str
   :param fq_results_filename: The fully qualified filename to store the results in
   :type fq_results_filename: str
+  :param predicted_field: The "fieldname", identified in the model parameters file, which will be predicted, e.g. "spread" or "m1_ask"
+  :type predicted_field: str
   :return:
   """
 
@@ -643,7 +672,7 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename)
   network = createNetwork(dataSource=dataSource, fq_model_filename=fq_model_filename)
 
   # Configure the network according to the model parameters
-  configureNetwork(network=network)
+  configureNetwork(network=network, predicted_field=predicted_field)
 
   # pop one item off the top of the actuals and timestamps, so the
   # actual and predicted values will line up
@@ -815,6 +844,7 @@ def parse_options():
     '-m' or "--market" - the market symbol
     '-F' or "--future" - the second market to calculate the spread from
     '-t' or "--time_units" - the time units, either: "1m", "5m", "1h", "1d"
+    '-P' or "--predict" - the field name that will be predicted, e.g. "spread" or "m1_ask"
 
   :returns: (options, args)
   :rtype: tuple
@@ -840,6 +870,8 @@ def parse_options():
                     help="the second market to calculate the spread from")
   parser.add_option('-t', "--time_units", dest="time_units", default='5m',
                     help='the time units, either: "1m", "5m", "1h", "1d"')
+  parser.add_option('-P', "--predict", dest="predicted_field", default='spread',
+                    help="'-P' or '--predict' - the field name that will be predicted, e.g. 'spread' or 'm1_ask'")
 
   (options, args) = parser.parse_args()
   return options, args
@@ -857,6 +889,7 @@ if __name__ == "__main__":
   market1_symbol = options.market1
   future_symbol = options.market2
   time_units = options.time_units
+  predicted_field = options.predicted_field
 
   # INPUT and OUTPUT file names
   nmarket = market1_symbol.lower().replace('/', '')
@@ -916,7 +949,8 @@ if __name__ == "__main__":
   # save the results to the 'model_output_files' directory
   run_the_predictor(fq_input_filename=input_filename,
                     fq_model_filename=FQ_MODEL_FILENAME,
-                    fq_results_filename=FQ_RESULTS_FILENAME)
+                    fq_results_filename=FQ_RESULTS_FILENAME,
+                    predicted_field=predicted_field)
 
   # modify the permissions of the files in the output directory
   # so that everyone can read them
