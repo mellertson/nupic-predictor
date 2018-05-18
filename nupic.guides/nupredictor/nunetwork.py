@@ -5,7 +5,7 @@ import yaml
 import requests
 from time import sleep
 from dateutil import parser
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pytz
 from nupic.engine import Network
 from nupic.encoders import MultiEncoder
@@ -97,29 +97,6 @@ def calculate_start_date(end_date, data_points, time_units):
   td = add_time(time_units=time_units)
   start_date = end_date - (td * data_points)
   return start_date
-
-
-def initialize_csv(fq_input_filename):
-  """
-  Creates the input filename, initializing its top three rows in the Nupic file format
-
-  NOTE: The "input file" will be over-written if it exists. If it does
-  not exist, it will be created.
-
-  :param fq_input_filename: The fully qualified path to the "input file"
-  :type fq_input_filename: str
-  :rtype: None
-  """
-
-  # write the headers
-  lines = list()
-  lines.append('timestamp, spread, target_value, m1_ask, m1_ask_size, m1_bid, m1_bid_size, m2_ask, m2_ask_size, m2_bid, m2_bid_size\n')
-  lines.append('datetime, float, int, float, float, float, float, float, float, float, float\n')
-  lines.append('T, , , , , , , , , ,\n')
-
-  # save the data to a .csv file
-  with open(fq_input_filename, 'w') as f:
-    f.writelines(lines)
 
 
 def add_time(time_units):
@@ -220,14 +197,12 @@ def cache_input_data_file(fq_input_filename, exchange, market, data_table, start
   :type port: int
   :return:
   """
-  # if file_exists(full_path=fq_input_filename):
-  #     return
 
   # local variables
   global ACTUALS
 
   # Create the input file, over-writing it if it exists
-  initialize_csv(fq_input_filename=fq_input_filename)
+  initialize_csv(fq_input_filename=fq_input_filename, markets=[market])
 
   # build the base url
   base_url = 'http://{}:{}/ws/data/get'.format(host, port)
@@ -237,11 +212,14 @@ def cache_input_data_file(fq_input_filename, exchange, market, data_table, start
 
   # send the HTTP request and decode the JSON response
   response = requests.get(base_url, params=params, timeout=60*60)
-  data = json.loads(response.content.decode('utf-8'))
+  if response.status_code != 200:
+    raise ValueError('No {}-{} data was found between {} and {} for {}'.format(exchange, market, start, end, time_units))
+
+  data = pd.read_json(response.content, orient='index', precise_float=True)
 
   # write the lines of data
   lines = []
-  for i, row in enumerate(data):
+  for ts, row in data.iterrows():
     # extract the variables from the row
     exchange = row['exchange']
     market = row['market']
@@ -249,18 +227,13 @@ def cache_input_data_file(fq_input_filename, exchange, market, data_table, start
     bid_size = float(row['bid_size'])
     ask_price = float(row['ask_price'])
     ask_size = float(row['ask_size'])
-    timestamp = parser.parse(row['timestamp'])
     try:
       value_to_predict = (ask_price - bid_price)
     except ZeroDivisionError:
       value_to_predict = 0.0
 
-    # # add the actual value and timestamp to the global variables
-    # timestamps.append(timestamp)
-    # actuals.append(value_to_predict)
-
     # add the line we just built to 'lines' for output in a moment
-    lines.append('{}, {:.15}\n'.format(timestamp.strftime("%Y-%m-%d %H:%M:%S.%f"), value_to_predict))
+    lines.append('{}, {:.15}\n'.format(ts.strftime("%Y-%m-%d %H:%M:%S.%f"), value_to_predict))
 
   # save 'lines' to the CSV file
   with open(fq_input_filename, 'a+') as f:
@@ -302,7 +275,8 @@ def cache_input_data_file_2(fq_input_filename, exchange, market, data_table, sta
   global ACTUALS
 
   # Create the input file, over-writing it if it exists
-  initialize_csv(fq_input_filename=fq_input_filename)
+  markets = [market] if market2 is None else [market, market2]
+  initialize_csv(fq_input_filename=fq_input_filename, markets=markets)
 
   # build the base url
   base_url = 'http://{}:{}/ws/data/get'.format(host, port)
@@ -399,6 +373,183 @@ def cache_input_data_file_2(fq_input_filename, exchange, market, data_table, sta
   # save 'lines' to the CSV file
   with open(fq_input_filename, 'a+') as f:
     f.writelines(lines)
+
+
+def fetch_market_data(exchange, markets, data_table, start, end, time_units, username='mellertson', password='test', host='localhost', port=8000):
+  """
+  Get data from Django web-service
+
+  :param exchange:
+  :type exchange: str
+  :param markets: list of market symbols
+  :type markets: list(str, str, ...)
+  :param data_table: The Django data model (table name) the data originates from
+  :type data_table: str
+  :param start:
+  :type start: datetime
+  :param end:
+  :type end: datetime
+  :param time_units: '1m' | '5m' | '1h' | '1d'
+  :type time_units: str
+  :param username:
+  :type username: str
+  :param password:
+  :type password: str
+  :param host:
+  :type host: str
+  :param port:
+  :type port: int
+  :return: Pandas DataFrames, e.g.: {'BTC/USD': dataframe, 'BTC/M18': dataframe}
+  :rtype: dict
+  """
+
+  # local variables
+  base_url = 'http://{}:{}/ws/data/get'.format(host, port)
+  frames = {}
+
+  # for each market...
+  for market in markets:
+    # build the input variables needed by the web-service
+    params1 = {'username': username, 'passwd': password, 'exchange': exchange, 'symbol': market, 'data_table': data_table, 'start': start, 'end': end, 'time_units': time_units}
+
+    # send the HTTP request and decode the JSON response
+    response = requests.get(base_url, params=params1, timeout=60*60)
+    if response.status_code != 200:
+      raise ValueError('No {}-{} data was found between {} and {} for {}'.format(exchange, market, start, end, time_units))
+    data = pd.read_json(response.content, orient='index', precise_float=True)
+
+    # verify there is at least 1 row of data in each data set
+    if len(data) < 1:
+      raise ValueError('No {}-{} data was found between {} and {} for {}'.format(exchange, market, start, end, time_units))
+
+    frames[market] = data
+
+  # calculate start and end dates
+  start = datetime(1973, 1, 18, tzinfo=timezone.utc)
+  end = datetime(2500, 1, 18, tzinfo=timezone.utc)
+  for market, df in frames.items():
+    s = min(df.index)
+    e = max(df.index)
+    start = s if s > start else start
+    end = e if e < end else end
+
+  # slice down the data frames to the common start and end dates
+  for market, df in frames.items():
+    frames[market] = df[start:end]
+
+  # return the data frames
+  return frames
+
+
+def initialize_csv(fq_input_filename, markets, include_spread=True, include_classification=False):
+  """
+  Creates the input filename, initializing its top three rows in the Nupic file format
+
+  NOTE: The "input file" will be over-written if it exists. If it does
+  not exist, it will be created.
+
+  :param fq_input_filename: The fully qualified path to the "input file"
+  :type fq_input_filename: str
+  :param include_spread:
+  :type include_spread: bool
+  :param markets: The list of markets which will be included in the input file, e.g.: 'BTC/USD' | 'BTC/M18'
+  :type markets: list(str, str, ...)
+  :param include_classification:
+  :type include_classification: bool
+  :rtype: None
+  """
+
+  quote_fields = ['ask_price', 'ask_size', 'bid_price', 'bid_size']
+  fields = ['timestamp']   # the list of field names to be included in the input file
+  dtypes = ['datetime']
+  thirds = ['T']
+
+  # build the list of fields that will be included in the input file
+  if include_spread:
+    fields.append('spread')
+    dtypes.append('float')
+    thirds.append(' ')
+  if include_classification:
+    fields.append('classification')
+    dtypes.append('int')
+    thirds.append(' ')
+  for market in markets:
+    m = market.replace('/', '').lower()
+    for field in quote_fields:
+      fields.append('{}_{}'.format(m, field))
+      dtypes.append('float')
+      thirds.append(' ')
+
+  # write the headers
+  lines = list()
+  lines.append(', '.join(fields) + '\n')
+  lines.append(', '.join(dtypes) + '\n')
+  lines.append(', '.join(thirds) + '\n')
+
+  # save the data to a .csv file
+  with open(fq_input_filename, 'w') as f:
+    f.writelines(lines)
+
+
+def write_input_file(fq_input_filename, markets, market_data, include_spread=True, include_classification=False):
+  """
+  Create the input file from given market data
+
+  :param fq_input_filename: The CSV file containing the input data to run through the Nupic model
+  :type fq_input_filename: str
+  :param markets: Example: ['BTC/USD', 'BTC/M18']
+  :type markets: list
+  :param market_data: Example: {'BTC/USD': dataframe, 'BTC/M18': dataframe}
+  :type market_data: dict
+  :param include_spread:
+  :type include_spread: bool
+  :param include_classification:
+  :type include_classification: bool
+  :return:
+  """
+
+  # save 'lines' to the CSV file
+  with open(fq_input_filename, 'a+') as f:
+    for market in markets:
+      line = []
+      i = 0
+      for ts, row in market_data[market].iterrows():
+        # add the timestamp to the first column of the line
+        if i == 0:
+          line.append(ts.strftime("%Y-%m-%d %H:%M:%S.%f"))
+
+        # extract the variables from the row
+        ask_price = float(row['ask_price'])
+        ask_size = float(row['ask_size'])
+        bid_price = float(row['bid_price'])
+        bid_size = float(row['bid_size'])
+        spread = ask_price - bid_price
+
+        # calculate the classification of the spread
+        if spread >= 2.0:
+          classification = 5
+        elif spread < 2.0 and spread >= 1.0:
+          classification = 4
+        elif spread < 1.0 and spread > -1.0:
+          classification = 3
+        elif spread <= -1.0 and spread > -2.0:
+          classification = 2
+        else:
+          classification = 1
+
+        # append the values to the line
+        if i == 0:
+          if include_spread:
+            line.append(spread)
+          if include_classification:
+            line.append(classification)
+        line.append(ask_price)
+        line.append(ask_size)
+        line.append(bid_price)
+        line.append(bid_size)
+
+        # write the line into the file
+        f.write(','.join(line) + '\n')
 
 
 def get_file_permissions(fq_filename):
@@ -790,7 +941,6 @@ EXCHANGE = 'bitmex'
 NMARKET = 'XBTM18'.lower()
 MARKET2 = 'XBTUSD'.lower()
 DATA_TABLE = 'quote'
-SUFFIX_NAME = 'spread-future-swap-5m-5steps'
 CURRENT_DATE_TIME = datetime.now().strftime("%Y.%m.%d.%H.%M").lower()
 CURRENT_DATE = datetime.now().strftime("%Y.%m.%d").lower()
 # CANDLESTICK_SIZE = '1h' # 1m = 1 minute, 5m = 5 minutes
@@ -799,7 +949,7 @@ END_DATE = datetime(2018, 4, 1, tzinfo=pytz.utc)
 DATA_POINTS = int((END_DATE - START_DATE).total_seconds() / 60 / 5) + 1
 
 # INPUT and OUTPUT file names
-EXPERIMENT_NAME = '{}.{}.{}.{}.{}'.format(CURRENT_DATE_TIME, EXCHANGE, NMARKET, DATA_TABLE, SUFFIX_NAME)
+EXPERIMENT_NAME = '{}.{}.{}.{}.{}'.format(CURRENT_DATE_TIME, EXCHANGE, NMARKET, DATA_TABLE, '')
 INPUT_FILENAME = '{}.{}.{}.csv'.format(EXCHANGE, NMARKET, DATA_TABLE)
 RESULTS_FILENAME = '{}.results.csv'.format(EXPERIMENT_NAME)
 MODEL_FILENAME = '{}.model.yaml'.format(EXPERIMENT_NAME)
@@ -811,7 +961,7 @@ MODEL_OUTPUT_FILES_DIR = os.path.join(BASE_DIR, 'model_output_files/{}'.format(C
 # FQ_INPUT_FILENAME = os.path.join(MODEL_INPUT_FILES_DIR, INPUT_FILENAME)
 FQ_RESULTS_FILENAME = os.path.join(MODEL_OUTPUT_FILES_DIR, RESULTS_FILENAME)
 FQ_MODEL_FILENAME = os.path.join(MODEL_OUTPUT_FILES_DIR, MODEL_FILENAME)
-FQ_MODEL_TEMPLATE_FILENAME = os.path.join(MODEL_INPUT_FILES_DIR, "model-template.yaml")
+FQ_MODEL_TEMPLATE_FILENAME = os.path.join(MODEL_INPUT_FILES_DIR, "model-one-market-quotes.yaml")
 
 # Output variables
 ACTUALS = []
@@ -841,8 +991,7 @@ def parse_options():
     '-e' or "--end"    - the end date to get data till, defaults to 04/01/2018"
     '-d' or "--server" - the name of the Django server to get the data from
     '-p' or "--port"   - (default = 80) the port number the Django server is running on
-    '-m' or "--market" - the market symbol
-    '-F' or "--future" - the second market to calculate the spread from
+    '-m' or "--markets" - a list of market symbols, delimited by a semicolon
     '-t' or "--time_units" - the time units, either: "1m", "5m", "1h", "1d"
     '-P' or "--predict" - the field name that will be predicted, e.g. "spread" or "m1_ask"
 
@@ -864,10 +1013,8 @@ def parse_options():
                     help="the name of the Django server to get the data from")
   parser.add_option('-p', "--port", dest="server_port", default="80",
                     help="(default = 80) the port number the Django server is running on")
-  parser.add_option('-m', "--market", dest="market1", default="BTC/USD",
-                    help="(default = BTC/USD) the market symbol")
-  parser.add_option('-F', "--future", dest="market2", default=None,
-                    help="the second market to calculate the spread from")
+  parser.add_option('-m', "--markets", dest="markets", default="BTC/USD",
+                    help="a list of market symbols, delimited by a semicolon")
   parser.add_option('-t', "--time_units", dest="time_units", default='5m',
                     help='the time units, either: "1m", "5m", "1h", "1d"')
   parser.add_option('-P', "--predict", dest="predicted_field", default='spread',
@@ -886,15 +1033,16 @@ if __name__ == "__main__":
   end = parser.parse(options.end)
   django_server = options.server_name
   django_port = options.server_port
-  market1_symbol = options.market1
-  future_symbol = options.market2
+  markets = options.markets
   time_units = options.time_units
   predicted_field = options.predicted_field
 
   # INPUT and OUTPUT file names
-  nmarket = market1_symbol.lower().replace('/', '')
-  EXPERIMENT_NAME = '{}.{}.{}.{}.{}'.format(CURRENT_DATE_TIME, EXCHANGE, nmarket, DATA_TABLE, SUFFIX_NAME)
-  INPUT_FILENAME = '{}.{}.{}.csv'.format(EXCHANGE, nmarket, DATA_TABLE)
+  market_symbols = markets.lower().replace('/', '').replace(';', '-')
+  markets = markets.split(';')
+  SUFFIX_NAME = 'spread-future-swap-{}'.format(time_units)
+  EXPERIMENT_NAME = '{}.{}.{}.{}.{}'.format(CURRENT_DATE_TIME, EXCHANGE, market_symbols, DATA_TABLE, SUFFIX_NAME)
+  INPUT_FILENAME = '{}.{}.{}.csv'.format(EXCHANGE, market_symbols, DATA_TABLE)
   RESULTS_FILENAME = '{}.results.csv'.format(EXPERIMENT_NAME)
   MODEL_FILENAME = '{}.model.yaml'.format(EXPERIMENT_NAME)
 
@@ -916,10 +1064,10 @@ if __name__ == "__main__":
   # the Django server and cache it in a local CSV file in
   # the 'model_input_files' directory
   if create_input_file:
-    if future_symbol is None:
+    if len(markets) == 1:
       cache_input_data_file(fq_input_filename=input_filename,
                             exchange=EXCHANGE,
-                            market=market1_symbol,
+                            market=markets[0],
                             data_table=DATA_TABLE,
                             start=start,
                             end=end,
@@ -929,14 +1077,14 @@ if __name__ == "__main__":
     else:
       cache_input_data_file_2(fq_input_filename=input_filename,
                               exchange=EXCHANGE,
-                              market=market1_symbol,
+                              market=markets[0],
                               data_table=DATA_TABLE,
                               start=start,
                               end=end,
                               time_units=time_units,
                               host=django_server,
                               port=django_port,
-                              market2=future_symbol)
+                              market2=markets[1])
 
   # read the input data file into local variables, so the
   # nupic predictor can use them to make its predictions

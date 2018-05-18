@@ -30,11 +30,6 @@ aggregationInfo:
   - [m1_ask_size, mean]
   - [m1_bid, mean]
   - [m1_bid_size, mean]
-  - [m2_ask, mean]
-  - [m2_ask_size, mean]
-  - [m2_bid, mean]
-  - [m2_bid_size, mean]
-  - [target_value, mean]
   # If a time unit is not listed, 0 will be its default value.
   microseconds: 0
   milliseconds: 0
@@ -101,36 +96,6 @@ modelParams:
         resolution: 0.88
         seed: 902
         type: RandomDistributedScalarEncoder
-      m2_ask:
-        fieldname: m2_ask
-        name: m2_ask
-        resolution: 0.88
-        seed: 69
-        type: RandomDistributedScalarEncoder
-      m2_ask_size:
-        fieldname: m2_ask_size
-        name: m2_ask_size
-        resolution: 0.88
-        seed: 73
-        type: RandomDistributedScalarEncoder
-      m2_bid:
-        fieldname: m2_bid
-        name: m2_bid
-        resolution: 0.88
-        seed: 420
-        type: RandomDistributedScalarEncoder
-      m2_bid_size:
-        fieldname: m2_bid_size
-        name: m2_bid_size
-        resolution: 0.88
-        seed: 1973
-        type: RandomDistributedScalarEncoder
-      target_value:
-        fieldname: target_value
-        name: target_value
-        w: 21
-        categoryList: '1,2,3,4,5'
-        type: CategoryEncoder
       timestamp_timeOfDay:
         fieldname: timestamp
         name: timestamp_timeOfDay
