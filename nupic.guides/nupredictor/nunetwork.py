@@ -3,15 +3,12 @@ import json
 import os, errno, shutil
 import yaml
 import requests
-from time import sleep
 from dateutil import parser
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 import pytz
 from nupic.engine import Network
 from nupic.encoders import MultiEncoder
 from nupic.data.file_record_stream import FileRecordStream
-# from cerebro2.patcher import Patcher
-import urllib
 from optparse import OptionParser
 import pandas as pd
 from nupredictor.functions import get_files
@@ -22,8 +19,6 @@ __all__ = [
   'DATA_POINTS',
   'BASE_DIR',
   'bcolors',
-  'cache_input_data_file',
-  'cache_input_data_file_2',
   'calculate_start_date',
   'get_file_permissions',
   'get_start_dates',
@@ -169,212 +164,6 @@ def create_output_directory(fq_model_template_filename, fq_model_filename, model
   shutil.copymode(src=fq_model_template_filename, dst=fq_model_filename)
 
 
-def cache_input_data_file(fq_input_filename, exchange, market, data_table, start, end, time_units, username='mellertson', password='test', host='localhost', port=8000,):
-  """
-  Get data from Django web-service, creating the input file if it does not exist
-
-  :param fq_input_filename: The CSV file containing the input data to run through the Nupic model
-  :type fq_input_filename: str
-  :param exchange:
-  :type exchange: str
-  :param market:
-  :type market: str
-  :param data_table: The Django data model (table name) the data originates from
-  :type data_table: str
-  :param start:
-  :type start: datetime
-  :param end:
-  :type end: datetime
-  :param time_units: '1m' | '5m' | '1h' | '1d'
-  :type time_units: str
-  :param username:
-  :type username: str
-  :param password:
-  :type password: str
-  :param host:
-  :type host: str
-  :param port:
-  :type port: int
-  :return:
-  """
-
-  # local variables
-  global ACTUALS
-
-  # Create the input file, over-writing it if it exists
-  initialize_csv(fq_input_filename=fq_input_filename, markets=[market])
-
-  # build the base url
-  base_url = 'http://{}:{}/ws/data/get'.format(host, port)
-
-  # build the input variables needed by the web-service
-  params = {'username': username, 'passwd': password, 'exchange': exchange, 'symbol': market, 'data_table': data_table, 'start': start, 'end': end, 'time_units': time_units}
-
-  # send the HTTP request and decode the JSON response
-  response = requests.get(base_url, params=params, timeout=60*60)
-  if response.status_code != 200:
-    raise ValueError('No {}-{} data was found between {} and {} for {}'.format(exchange, market, start, end, time_units))
-
-  data = pd.read_json(response.content, orient='index', precise_float=True)
-
-  # write the lines of data
-  lines = []
-  for ts, row in data.iterrows():
-    # extract the variables from the row
-    exchange = row['exchange']
-    market = row['market']
-    bid_price = float(row['bid_price'])
-    bid_size = float(row['bid_size'])
-    ask_price = float(row['ask_price'])
-    ask_size = float(row['ask_size'])
-    try:
-      value_to_predict = (ask_price - bid_price)
-    except ZeroDivisionError:
-      value_to_predict = 0.0
-
-    # add the line we just built to 'lines' for output in a moment
-    lines.append('{}, {:.15}\n'.format(ts.strftime("%Y-%m-%d %H:%M:%S.%f"), value_to_predict))
-
-  # save 'lines' to the CSV file
-  with open(fq_input_filename, 'a+') as f:
-    f.writelines(lines)
-
-
-def cache_input_data_file_2(fq_input_filename, exchange, market, data_table, start, end, time_units, username='mellertson', password='test', host='localhost', port=8000, market2=None):
-  """
-  Get data from Django web-service, creating the input file if it does not exist
-
-  :param fq_input_filename: The CSV file containing the input data to run through the Nupic model
-  :type fq_input_filename: str
-  :param exchange:
-  :type exchange: str
-  :param market:
-  :type market: str
-  :param market2:
-  :type market2: str
-  :param data_table: The Django data model (table name) the data originates from
-  :type data_table: str
-  :param start:
-  :type start: datetime
-  :param end:
-  :type end: datetime
-  :param time_units: '1m' | '5m' | '1h' | '1d'
-  :type time_units: str
-  :param username:
-  :type username: str
-  :param password:
-  :type password: str
-  :param host:
-  :type host: str
-  :param port:
-  :type port: int
-  :return:
-  """
-
-  # local variables
-  global ACTUALS
-
-  # Create the input file, over-writing it if it exists
-  markets = [market] if market2 is None else [market, market2]
-  initialize_csv(fq_input_filename=fq_input_filename, markets=markets)
-
-  # build the base url
-  base_url = 'http://{}:{}/ws/data/get'.format(host, port)
-
-  # build the input variables needed by the web-service
-  params1 = {'username': username, 'passwd': password, 'exchange': exchange, 'symbol': market, 'data_table': data_table, 'start': start, 'end': end, 'time_units': time_units}
-  params2 = {'username': username, 'passwd': password, 'exchange': exchange, 'symbol': market2, 'data_table': data_table, 'start': start, 'end': end, 'time_units': time_units}
-
-  # send the HTTP request and decode the JSON response
-  response1 = requests.get(base_url, params=params1, timeout=60*60)
-  response2 = requests.get(base_url, params=params2, timeout=60*60)
-
-  # verify there is at least 1 row of data in each data set
-  if response1.status_code != 200:
-    raise ValueError('No {}-{} data was found between {} and {} for {}'.format(exchange, market, start, end, time_units))
-  if response2.status_code != 200:
-    raise ValueError('No {}-{} data was found between {} and {} for {}'.format(exchange, market2, start, end, time_units))
-
-  data1 = pd.read_json(response1.content, orient='index', precise_float=True)
-  data2 = pd.read_json(response2.content, orient='index', precise_float=True)
-
-  # determine start and end dates of both data sets
-  data1_start = min(data1.index)
-  data1_end = max(data1.index)
-  data2_start = min(data2.index)
-  data2_end = max(data2.index)
-  s = max(data1_start, data2_start)
-  e = min(data1_end, data2_end)
-
-  # slice both data sets to the same range of dates
-  data1 = data1[s:e]
-  data2 = data2[s:e]
-
-  # verify there is at least 1 row of data in each data set
-  if len(data1) < 1:
-    raise ValueError('No {}-{} data was found between {} and {} for {}'.format(exchange, market, start, end, time_units))
-  if len(data2) < 1:
-    raise ValueError('No {}-{} data was found between {} and {} for {}'.format(exchange, market2, start, end, time_units))
-
-  # write the lines of data
-  lines = []
-  m2_last_bid = m2_last_ask = m2_last = 0.0
-  m2_ask_size = m2_bid_size = 0.0
-  for ts, row in data1.iterrows():
-    # extract the variables from the row
-    m1_ask = float(row['ask_price']) # * float(row['ask_size'])
-    m1_ask_size = float(row['ask_size']) # * float(row['ask_size'])
-    m1_bid = float(row['bid_price']) # * float(row['bid_size'])
-    m1_bid_size = float(row['bid_size']) # * float(row['bid_size'])
-    m1_value = (m1_ask + m1_bid) / 2.0
-    if ts in data2.index:
-      m2_ask = float(data2.loc[ts]['ask_price']) # * float(data2.loc[ts]['ask_size'])
-      m2_ask_size = float(data2.loc[ts]['ask_size']) # * float(data2.loc[ts]['ask_size'])
-      m2_bid = float(data2.loc[ts]['bid_price']) # * float(data2.loc[ts]['bid_size'])
-      m2_bid_size = float(data2.loc[ts]['bid_size']) # * float(data2.loc[ts]['bid_size'])
-      m2_value = (m2_ask + m2_bid) / 2.0
-    else:
-      m2_ask = m2_last_ask
-      m2_bid = m2_last_bid
-      m2_value = m2_last
-
-    # calculate the spread
-    if m1_value > m2_value:
-      spread = (m1_ask - m2_bid) / m1_ask * 100.0 if m1_ask != 0.0 else 0.0
-    elif m1_value < m2_value:
-      spread = (m2_ask - m1_bid) / m2_ask * 100.0 if m2_ask != 0.0 else 0.0
-    else:
-      spread = 0.0
-    if spread == 0.0:
-      continue
-
-    # calculate the target value
-    if spread >= 2.0:
-      target_value = '5'
-    elif spread < 2.0 and spread >= 1.0:
-      target_value = '4'
-    elif spread < 1.0 and spread > -1.0:
-      target_value = '3'
-    elif spread <= -1.0 and spread > -2.0:
-      target_value = '2'
-    else:
-      target_value = '1'
-
-    # add the line we just built to 'lines' for output in a moment
-    # if isinstance(target_value, float):
-    #   lines.append('{}, {:.15}\n'.format(ts.strftime("%Y-%m-%d %H:%M:%S.%f"), spread, target_value))
-    # else:
-    lines.append('{}, {:.2f}, {}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}\n'.format(ts.strftime("%Y-%m-%d %H:%M:%S.%f"), spread, target_value, m1_ask, m1_ask_size, m1_bid, m1_bid_size, m2_ask, m2_ask_size, m2_bid, m2_bid_size))
-
-    m2_last_ask = m2_ask
-    m2_last_bid = m2_bid
-    m2_last = m2_value
-
-  # save 'lines' to the CSV file
-  with open(fq_input_filename, 'a+') as f:
-    f.writelines(lines)
-
-
 def fetch_market_data(exchange, markets, data_table, start, end, time_units, username='mellertson', password='test', host='localhost', port=8000):
   """
   Get data from Django web-service
@@ -425,8 +214,8 @@ def fetch_market_data(exchange, markets, data_table, start, end, time_units, use
     frames[market] = data
 
   # calculate start and end dates
-  start = datetime(1973, 1, 18, tzinfo=timezone.utc)
-  end = datetime(2500, 1, 18, tzinfo=timezone.utc)
+  start = datetime(1973, 1, 18)
+  end = datetime(2500, 1, 18)
   for market, df in frames.items():
     s = min(df.index)
     e = max(df.index)
@@ -511,12 +300,13 @@ def write_input_file(fq_input_filename, markets, market_data, include_spread=Tru
   # save 'lines' to the CSV file
   with open(fq_input_filename, 'a+') as f:
     for market in markets:
-      line = []
       i = 0
       for ts, row in market_data[market].iterrows():
+        line = []
         # add the timestamp to the first column of the line
         if i == 0:
           line.append(ts.strftime("%Y-%m-%d %H:%M:%S.%f"))
+          i += 1
 
         # extract the variables from the row
         ask_price = float(row['ask_price'])
@@ -540,13 +330,13 @@ def write_input_file(fq_input_filename, markets, market_data, include_spread=Tru
         # append the values to the line
         if i == 0:
           if include_spread:
-            line.append(spread)
+            line.append(str(spread))
           if include_classification:
-            line.append(classification)
-        line.append(ask_price)
-        line.append(ask_size)
-        line.append(bid_price)
-        line.append(bid_size)
+            line.append(str(classification))
+        line.append(str(ask_price))
+        line.append(str(ask_size))
+        line.append(str(bid_price))
+        line.append(str(bid_size))
 
         # write the line into the file
         f.write(','.join(line) + '\n')
@@ -1054,7 +844,7 @@ if __name__ == "__main__":
   MODEL_OUTPUT_FILES_DIR = os.path.join(BASE_DIR, 'model_output_files/{}'.format(CURRENT_DATE))
   FQ_RESULTS_FILENAME = os.path.join(MODEL_OUTPUT_FILES_DIR, RESULTS_FILENAME)
   FQ_MODEL_FILENAME = os.path.join(MODEL_OUTPUT_FILES_DIR, MODEL_FILENAME)
-  FQ_MODEL_TEMPLATE_FILENAME = os.path.join(MODEL_INPUT_FILES_DIR, "model-template.yaml")
+  FQ_MODEL_TEMPLATE_FILENAME = os.path.join(MODEL_INPUT_FILES_DIR, "model-one-market-quotes.yaml")
 
   # create the 'model_output_files' directory and copy the model template
   # file into the 'model_output_files' directory and rename it
@@ -1074,15 +864,8 @@ if __name__ == "__main__":
                    include_spread=include_spread, include_classification=include_classification)
     write_input_file(input_filename, markets, market_data,
                      include_spread=include_spread, include_classification=include_classification)
-    cache_input_data_file(fq_input_filename=input_filename,
-                          exchange=EXCHANGE,
-                          market=markets[0],
-                          data_table=DATA_TABLE,
-                          start=start,
-                          end=end,
-                          time_units=time_units,
-                          host=django_server,
-                          port=django_port)
+
+    exit(1)
 
   # read the input data file into local variables, so the
   # nupic predictor can use them to make its predictions

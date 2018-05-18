@@ -26,10 +26,10 @@ aggregationInfo:
   # multiple values of this field over the aggregation period.
   fields:
   - [spread, mean]
-  - [m1_ask, mean]
-  - [m1_ask_size, mean]
-  - [m1_bid, mean]
-  - [m1_bid_size, mean]
+  - [btcusd_ask_price, mean]
+  - [btcusd_ask_size, mean]
+  - [btcusd_bid_price, mean]
+  - [btcusd_bid_size, mean]
   # If a time unit is not listed, 0 will be its default value.
   microseconds: 0
   milliseconds: 0
@@ -72,29 +72,29 @@ modelParams:
         resolution: 0.88
         seed: 1
         type: RandomDistributedScalarEncoder
-      m1_ask:
-        fieldname: m1_ask
-        name: m1_ask
+      btcusd_ask_price:
+        fieldname: btcusd_ask_price
+        name: btcusd_ask_price
         resolution: 0.88
         seed: 1
         type: RandomDistributedScalarEncoder
-      m1_ask_size:
-        fieldname: m1_ask_size
-        name: m1_ask_size
+      btcusd_ask_size:
+        fieldname: btcusd_ask_size
+        name: btcusd_ask_size
         resolution: 0.88
-        seed: 5
+        seed: 1
         type: RandomDistributedScalarEncoder
-      m1_bid:
-        fieldname: m1_bid
-        name: m1_bid
+      btcusd_bid_price:
+        fieldname: btcusd_bid_price
+        name: bid_price
         resolution: 0.88
-        seed: 129
+        seed: 1
         type: RandomDistributedScalarEncoder
-      m1_bid_size:
-        fieldname: m1_bid_size
-        name: m1_bid_size
+      btcusd_bid_size:
+        fieldname: btcusd_bid_size
+        name: btcusd_bid_size
         resolution: 0.88
-        seed: 902
+        seed: 1
         type: RandomDistributedScalarEncoder
       timestamp_timeOfDay:
         fieldname: timestamp
