@@ -13,7 +13,7 @@
     <module name="Predictors" />
     <EXTENSION ID="PythonCoverageRunConfigurationExtension" enabled="false" sample_coverage="true" runner="coverage.py" />
     <option name="SCRIPT_NAME" value="$PROJECT_DIR$/nupic.guides/nupredictor/nunetwork.py" />
-    <option name="PARAMETERS" value="--start=&quot;2018-04-01&quot; --end=&quot;2018-05-14&quot; --server=test.binarycapital.io --market=&quot;BTC/USD&quot; --future=&quot;BTC/M18&quot; --file=&quot;./model_input_files/bitmex-xbtusd-xbtxxx-quote-data.csv&quot; --time_units=&quot;5m&quot;" />
+    <option name="PARAMETERS" value="--start=&quot;2018-04-01&quot; --end=&quot;2018-04-2&quot; --server=test.binarycapital.io --market=&quot;BTC/USD&quot; --future=&quot;BTC/M18&quot; --file=&quot;./model_input_files/bitmex-xbtusd-xbtxxx-quote-data.csv&quot; --time_units=&quot;5m&quot;" />
     <option name="SHOW_COMMAND_LINE" value="false" />
     <option name="EMULATE_TERMINAL" value="false" />
     <option name="MODULE_MODE" value="false" />

@@ -14,6 +14,7 @@ from nupic.data.file_record_stream import FileRecordStream
 import urllib
 from optparse import OptionParser
 import pandas as pd
+from nupredictor.functions import get_files
 
 
 __all__ = [
@@ -396,9 +397,6 @@ def modify_output_file_permissions(fq_output_dir):
   :return:
   """
 
-  from .functions import get_files
-  import stat
-
   # get the list of files in the output directory
   files = get_files(fq_output_dir)
 
@@ -675,10 +673,10 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename)
       # extract the prediction
       predictionResults = getPredictionResults(network, "classifier")
       prediction = predictionResults[1]["predictedValue"]
-      prediction2 = predictionResults[2]["predictedValue"]
-      prediction3 = predictionResults[3]["predictedValue"]
-      prediction4 = predictionResults[4]["predictedValue"]
-      prediction5 = predictionResults[5]["predictedValue"]
+      # prediction2 = predictionResults[2]["predictedValue"]
+      # prediction3 = predictionResults[3]["predictedValue"]
+      # prediction4 = predictionResults[4]["predictedValue"]
+      # prediction5 = predictionResults[5]["predictedValue"]
       oneStepConfidence = predictionResults[1]["predictionConfidence"]
 
       ###################################################################################################
@@ -721,10 +719,10 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename)
       msg = "Row {}:\t{}\t".format(row, TIMESTAMPS[iteration])
       msg += "actual value:{:14.8f}\t".format(actual)
       msg += "predicted values:{:14.8f}\t".format(prediction)
-      msg += "{:14.8f}\t".format(prediction2)
-      msg += "{:14.8f}\t".format(prediction3)
-      msg += "{:14.8f}\t".format(prediction4)
-      msg += "{:14.8f}\t".format(prediction5)
+      # msg += "{:14.8f}\t".format(prediction2)
+      # msg += "{:14.8f}\t".format(prediction3)
+      # msg += "{:14.8f}\t".format(prediction4)
+      # msg += "{:14.8f}\t".format(prediction5)
       # msg += "{}\t".format(correct_colored)
       # msg += "score: {:.2f}%\t".format(score)
       # msg += "error: {:.2f}%\t".format(avg_pct_error)
@@ -735,10 +733,10 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename)
       msg = "{},{},".format(iteration + 1, TIMESTAMPS[iteration])
       msg += "{:.8f},".format(actual)
       msg += "{:.8f},".format(prediction)
-      msg += "{:.8f},".format(prediction2)
-      msg += "{:.8f},".format(prediction3)
-      msg += "{:.8f},".format(prediction4)
-      msg += "{:.8f},".format(prediction5)
+      # msg += "{:.8f},".format(prediction2)
+      # msg += "{:.8f},".format(prediction3)
+      # msg += "{:.8f},".format(prediction4)
+      # msg += "{:.8f},".format(prediction5)
       # msg += "{},".format(correct)
       # msg += "{:.1f},".format(score)
       # msg += "{:.2f},".format(avg_pct_error)
@@ -919,6 +917,10 @@ if __name__ == "__main__":
   run_the_predictor(fq_input_filename=input_filename,
                     fq_model_filename=FQ_MODEL_FILENAME,
                     fq_results_filename=FQ_RESULTS_FILENAME)
+
+  # modify the permissions of the files in the output directory
+  # so that everyone can read them
+  modify_output_file_permissions(MODEL_OUTPUT_FILES_DIR)
 
 
 

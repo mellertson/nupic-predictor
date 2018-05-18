@@ -235,8 +235,8 @@ modelParams:
     verbosity: 0
     regionName: SDRClassifierRegion
     alpha: 0.1
-    steps: '1,2,3,4,5'
-    maxCategoryCount: 5
+    steps: '1'
+    maxCategoryCount: 1000
     implementation: cpp
 
   # If set, don't create the SP network unless the user requests SP metrics.
