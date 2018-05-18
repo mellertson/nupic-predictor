@@ -1,7 +1,9 @@
 from unittest import TestCase
 import re
 from datetime import datetime, timedelta
-from . import *
+import os
+from .nunetwork import *
+from .functions import get_files
 
 
 def heading(msg):
@@ -44,7 +46,7 @@ class Predictor_Functions(TestCase):
       start + td * 3,
       start + td * 4,
       start + td * 5,
-    ]
+      ]
 
     # call the method under test
     aO_dates = get_start_dates(start_dt=start, data_points=data_points, time_units=time_units)
@@ -58,7 +60,7 @@ class Predictor_Functions(TestCase):
     # verify each date in the list is correct
     for eO_date in eO_dates:
       self.assertIn(eO_date, aO_dates,
-        heading("Expected {} in the returned list of dates\n\nBut, got:\n{}".format(eO_date, aO_dates)))
+                    heading("Expected {} in the returned list of dates\n\nBut, got:\n{}".format(eO_date, aO_dates)))
 
   def test_get_start_dates____with_1d_time_units(self):
     # inputs
@@ -76,7 +78,7 @@ class Predictor_Functions(TestCase):
       start + td * 3,
       start + td * 4,
       start + td * 5,
-    ]
+      ]
 
     # call the method under test
     aO_dates = get_start_dates(start_dt=start, data_points=data_points, time_units=time_units)
@@ -90,7 +92,7 @@ class Predictor_Functions(TestCase):
     # verify each date in the list is correct
     for eO_date in eO_dates:
       self.assertIn(eO_date, aO_dates,
-        heading("Expected {} in the returned list of dates\n\nBut, got:\n{}".format(eO_date, aO_dates)))
+                    heading("Expected {} in the returned list of dates\n\nBut, got:\n{}".format(eO_date, aO_dates)))
 
   def test_get_data___with_1m_time_units____and_3000_data_points(self):
     # inputs
@@ -116,7 +118,7 @@ class Predictor_Functions(TestCase):
 
     # verify number of lines in the file
     self.assertEqual(line_count, len(lines),
-      heading("Expected {} lines in the file, but got {}".format(line_count, len(lines))))
+                     heading("Expected {} lines in the file, but got {}".format(line_count, len(lines))))
 
     # verify the first three lines in the file
     self.assertEqual(line1, lines[0])
@@ -134,7 +136,7 @@ class Predictor_Functions(TestCase):
       timestamp = line.split(',')[0]
       eO_timestamp = (start + timedelta(minutes=1) * (i - 3)).strftime(self.format)
       self.assertEqual(timestamp, eO_timestamp,
-        heading("Expected the timestamp column = {}, but got {}".format(eO_timestamp, timestamp)))
+                       heading("Expected the timestamp column = {}, but got {}".format(eO_timestamp, timestamp)))
 
   def test_get_data___with_1d_time_units____and_3000_data_points(self):
     # inputs
@@ -160,7 +162,7 @@ class Predictor_Functions(TestCase):
 
     # verify number of lines in the file
     self.assertEqual(line_count, len(lines),
-      heading("Expected {} lines in the file, but got {}".format(line_count, len(lines))))
+                     heading("Expected {} lines in the file, but got {}".format(line_count, len(lines))))
 
     # verify the first three lines in the file
     self.assertEqual(line1, lines[0])
@@ -178,7 +180,48 @@ class Predictor_Functions(TestCase):
       timestamp = line.split(',')[0]
       eO_timestamp = (start + timedelta(minutes=1) * (i - 3)).strftime(self.format)
       self.assertEqual(timestamp, eO_timestamp,
-        heading("Expected the timestamp column = {}, but got {}".format(eO_timestamp, timestamp)))
+                       heading("Expected the timestamp column = {}, but got {}".format(eO_timestamp, timestamp)))
+
+
+class Modify_Output_File(TestCase):
+  """ Test the modify_output_file_permissions function """
+
+  def setUp(self):
+    directory = os.path.dirname(os.path.realpath(__file__))
+    self.directory = os.path.join(directory, 'test_files')
+    self.cmd = 'chmod 644 {}/*.txt'.format(self.directory)
+    os.system(self.cmd)
+
+  def tearDown(self):
+    os.system(self.cmd)
+
+
+  def test_modify_output_file_permissions(self):
+    # inputs
+    all_files = { 'file1.txt': False , 'file2.txt': False, }
+    all_lines_ran = False
+
+    # execute the method being tested
+    modify_output_file_permissions(self.directory)
+
+    # for each file in the directory...
+    for file in get_files(directory=self.directory):
+      fq_file = os.path.join(self.directory, file)
+      other_perms = get_file_permissions(fq_filename=fq_file)[2]
+
+      self.assertGreaterEqual(int(other_perms), 6,
+        'Expected "other permissions" to be at least read/write, but got {}'.format(other_perms))
+      all_files[file] = True
+
+    # verify all lines in this test case ran
+    for filename, did_run in all_files.items():
+      self.assertTrue(did_run, 'Permissions on file "{}" was not modified'.format(filename))
+      all_lines_ran = True
+    self.assertTrue(all_lines_ran, 'All lines in this test case were not executed')
+
+
+
+
 
 
 

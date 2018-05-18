@@ -38,10 +38,10 @@ aggregationInfo:
   # If a time unit is not listed, 0 will be its default value.
   microseconds: 0
   milliseconds: 0
-  minutes: 5
+  minutes: 0
   months: 0
   seconds: 0
-  hours: 0
+  hours: 1
   days: 0
   weeks: 0
   years: 0

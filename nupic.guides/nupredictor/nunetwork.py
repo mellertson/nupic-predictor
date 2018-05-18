@@ -16,6 +16,20 @@ from optparse import OptionParser
 import pandas as pd
 
 
+__all__ = [
+  'START_DATE',
+  'DATA_POINTS',
+  'BASE_DIR',
+  'bcolors',
+  'cache_input_data_file',
+  'cache_input_data_file_2',
+  'calculate_start_date',
+  'get_file_permissions',
+  'get_start_dates',
+  'modify_output_file_permissions',
+]
+
+
 class bcolors(object):
   HEADER = '\033[95m'
   OKBLUE = '\033[94m'
@@ -359,6 +373,40 @@ def cache_input_data_file_2(fq_input_filename, exchange, market, data_table, sta
   # save 'lines' to the CSV file
   with open(fq_input_filename, 'a+') as f:
     f.writelines(lines)
+
+
+def get_file_permissions(fq_filename):
+  """
+  Returns a file's permission mask
+
+  :param fq_filename: A fully qualified filename
+  :type fq_filename: str
+  :return: Example: 644
+  :rtype: str
+  """
+  return oct(os.stat(fq_filename)[0])[4:]
+
+
+def modify_output_file_permissions(fq_output_dir):
+  """
+  Makes all files in the output directory read/writable by all users
+
+  :param fq_output_dir:
+  :type fq_output_dir: str
+  :return:
+  """
+
+  from .functions import get_files
+  import stat
+
+  # get the list of files in the output directory
+  files = get_files(fq_output_dir)
+
+  # change the permissions of all files in the output directory
+  for file in files:
+    fq_file = os.path.join(fq_output_dir, file)
+    cmd = 'chmod o+rw {}'.format(fq_file)
+    os.system(cmd)
 
 
 def read_input_file(fq_input_filename):
@@ -715,8 +763,9 @@ EXCHANGE = 'bitmex'
 NMARKET = 'XBTM18'.lower()
 MARKET2 = 'XBTUSD'.lower()
 DATA_TABLE = 'quote'
-SUFFIX_NAME = 'bid.ask.spread-as-pct-change'
-CURRENT_DATE_TIME = datetime.now().strftime("%Y.%m.%d.%I.%M.%p").lower()
+SUFFIX_NAME = 'spread-future-swap-5m-5steps'
+CURRENT_DATE_TIME = datetime.now().strftime("%Y.%m.%d.%H.%M").lower()
+CURRENT_DATE = datetime.now().strftime("%Y.%m.%d").lower()
 # CANDLESTICK_SIZE = '1h' # 1m = 1 minute, 5m = 5 minutes
 START_DATE = datetime(2015, 10, 1, tzinfo=pytz.utc)
 END_DATE = datetime(2018, 4, 1, tzinfo=pytz.utc)
@@ -731,7 +780,7 @@ MODEL_FILENAME = '{}.model.yaml'.format(EXPERIMENT_NAME)
 # INPUT and OUTPUT directory names
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_INPUT_FILES_DIR = os.path.join(BASE_DIR, 'model_input_files')
-MODEL_OUTPUT_FILES_DIR = os.path.join(BASE_DIR, 'model_output_files/{}'.format(EXPERIMENT_NAME))
+MODEL_OUTPUT_FILES_DIR = os.path.join(BASE_DIR, 'model_output_files/{}'.format(CURRENT_DATE))
 # FQ_INPUT_FILENAME = os.path.join(MODEL_INPUT_FILES_DIR, INPUT_FILENAME)
 FQ_RESULTS_FILENAME = os.path.join(MODEL_OUTPUT_FILES_DIR, RESULTS_FILENAME)
 FQ_MODEL_FILENAME = os.path.join(MODEL_OUTPUT_FILES_DIR, MODEL_FILENAME)
@@ -821,7 +870,7 @@ if __name__ == "__main__":
   # INPUT and OUTPUT directory names
   BASE_DIR = os.path.dirname(os.path.abspath(__file__))
   MODEL_INPUT_FILES_DIR = os.path.join(BASE_DIR, 'model_input_files')
-  MODEL_OUTPUT_FILES_DIR = os.path.join(BASE_DIR, 'model_output_files/{}'.format(EXPERIMENT_NAME))
+  MODEL_OUTPUT_FILES_DIR = os.path.join(BASE_DIR, 'model_output_files/{}'.format(CURRENT_DATE))
   FQ_RESULTS_FILENAME = os.path.join(MODEL_OUTPUT_FILES_DIR, RESULTS_FILENAME)
   FQ_MODEL_FILENAME = os.path.join(MODEL_OUTPUT_FILES_DIR, MODEL_FILENAME)
   FQ_MODEL_TEMPLATE_FILENAME = os.path.join(MODEL_INPUT_FILES_DIR, "model-template.yaml")
@@ -870,6 +919,9 @@ if __name__ == "__main__":
   run_the_predictor(fq_input_filename=input_filename,
                     fq_model_filename=FQ_MODEL_FILENAME,
                     fq_results_filename=FQ_RESULTS_FILENAME)
+
+
+
 
 
 

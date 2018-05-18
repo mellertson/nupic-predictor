@@ -38,7 +38,7 @@ aggregationInfo:
   # If a time unit is not listed, 0 will be its default value.
   microseconds: 0
   milliseconds: 0
-  minutes: 5
+  minutes: 0
   months: 0
   seconds: 0
   hours: 0
@@ -46,7 +46,7 @@ aggregationInfo:
   weeks: 0
   years: 0
 
-predictAheadTime: null
+predictAheadTime: True
 
 # Parameters of the model to be created.
 modelParams:
@@ -60,7 +60,7 @@ modelParams:
   # - NontemporalAnomaly
   # - TemporalMultiStep
   # - NontemporalMultiStep
-  inferenceType: TemporalMultiStep
+  inferenceType: TemporalClassification
 
   # Parameters of the Sensor region
   sensorParams:
@@ -74,55 +74,55 @@ modelParams:
       spread:
         fieldname: spread
         name: spread
-        resolution: 0.88
+        resolution: 0.01
         seed: 1
         type: RandomDistributedScalarEncoder
       m1_ask:
         fieldname: m1_ask
         name: m1_ask
-        resolution: 0.88
+        resolution: 0.01
         seed: 1
         type: RandomDistributedScalarEncoder
       m1_ask_size:
         fieldname: m1_ask_size
         name: m1_ask_size
-        resolution: 0.88
+        resolution: 0.01
         seed: 5
         type: RandomDistributedScalarEncoder
       m1_bid:
         fieldname: m1_bid
         name: m1_bid
-        resolution: 0.88
+        resolution: 0.01
         seed: 129
         type: RandomDistributedScalarEncoder
       m1_bid_size:
         fieldname: m1_bid_size
         name: m1_bid_size
-        resolution: 0.88
+        resolution: 0.01
         seed: 902
         type: RandomDistributedScalarEncoder
       m2_ask:
         fieldname: m2_ask
         name: m2_ask
-        resolution: 0.88
+        resolution: 0.01
         seed: 69
         type: RandomDistributedScalarEncoder
       m2_ask_size:
         fieldname: m2_ask_size
         name: m2_ask_size
-        resolution: 0.88
+        resolution: 0.01
         seed: 73
         type: RandomDistributedScalarEncoder
       m2_bid:
         fieldname: m2_bid
         name: m2_bid
-        resolution: 0.88
+        resolution: 0.01
         seed: 420
         type: RandomDistributedScalarEncoder
       m2_bid_size:
         fieldname: m2_bid_size
         name: m2_bid_size
-        resolution: 0.88
+        resolution: 0.01
         seed: 1973
         type: RandomDistributedScalarEncoder
       target_value:
@@ -214,27 +214,26 @@ modelParams:
     newSynapseCount: 20
     initialPerm: 0.21
     permanenceInc: 0.1
-    permanenceDec: 0.1
-    maxAge: 0
-    globalDecay: 0.0
-    maxSynapsesPerSegment: 32
-    maxSegmentsPerCell: 128
+    permanenceDec: 0.15
+    maxAge: 10
+    globalDecay: 1.0
+#    maxSynapsesPerSegment: -1
+#    maxSegmentsPerCell: -1
     minThreshold: 12
     activationThreshold: 16
     outputType: normal
     pamLength: 1
-    # Mike's custom configs
-#    burnIn: 2
-#    maxInfBacktrack: 20
-#    maxLrnBacktrack: 10
-#    permanenceMax: 1.5
+    burnIn: 2
+    maxInfBacktrack: 20
+    maxLrnBacktrack: 10
+    permanenceMax: 1.5
 
   # Classifier parameters. For detailed descriptions of each parameter, see
   # the API docs for nupic.algorithms.sdr_classifier.SDRClassifier.
   clParams:
     verbosity: 0
     regionName: SDRClassifierRegion
-    alpha: 0.1
+    alpha: 0.001
     steps: '1,2,3,4,5'
     maxCategoryCount: 5
     implementation: cpp
