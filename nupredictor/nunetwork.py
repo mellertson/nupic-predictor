@@ -15,14 +15,23 @@ from nupredictor.functions import get_files
 
 
 __all__ = [
-  'START_DATE',
-  'DATA_POINTS',
+  # global variables
   'BASE_DIR',
+  'DATA_POINTS',
+  'DATA_TABLE',
+  'INPUT_FILENAME',
+  'MODEL_INPUT_FILES_DIR',
+  'START_DATE',
+  
+  # everything else
   'bcolors',
   'calculate_start_date',
+  'fetch_market_data',
   'get_file_permissions',
   'get_start_dates',
+  'initialize_csv',
   'modify_output_file_permissions',
+  'write_input_file',
 ]
 
 
@@ -726,7 +735,7 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename,
 
 
 global EXPERIMENT_NAME, INPUT_FILENAME, RESULTS_FILENAME, MODEL_FILENAME, BASE_DIR, MODEL_INPUT_FILES_DIR
-global MODEL_OUTPUT_FILES_DIR, FQ_RESULTS_FILENAME, FQ_MODEL_FILENAME, FQ_MODEL_TEMPLATE_FILENAME
+global MODEL_OUTPUT_FILES_DIR, FQ_RESULTS_FILENAME, FQ_MODEL_FILENAME, FQ_MODEL_TEMPLATE_FILENAME, DATA_TABLE
 
 # Input variables into the system
 EXCHANGE = 'bitmex'

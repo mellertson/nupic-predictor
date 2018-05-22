@@ -1,4 +1,4 @@
-from unittest import TestCase
+from unittest import TestCase, skip
 import re
 from datetime import datetime, timedelta
 import os
@@ -14,6 +14,7 @@ def heading(msg):
 class Predictor_Functions(TestCase):
   def setUp(self):
     self.start = datetime(2018, 1, 1)
+    self.end = self.start + timedelta(days=30)
     self.format = "%Y-%m-%d %H:%M:%S.000000"
 
   def test_calculate_start_date___with_1d_time_units(self):
@@ -94,6 +95,9 @@ class Predictor_Functions(TestCase):
       self.assertIn(eO_date, aO_dates,
                     heading("Expected {} in the returned list of dates\n\nBut, got:\n{}".format(eO_date, aO_dates)))
 
+  """ """
+
+  @skip("Need to re-write this test case, so it imports a fixture for the data it will export in the test")
   def test_get_data___with_1m_time_units____and_3000_data_points(self):
     # inputs
     start = self.start
@@ -138,11 +142,17 @@ class Predictor_Functions(TestCase):
       self.assertEqual(timestamp, eO_timestamp,
                        heading("Expected the timestamp column = {}, but got {}".format(eO_timestamp, timestamp)))
 
-  def test_get_data___with_1d_time_units____and_3000_data_points(self):
+  @skip("Need to re-write this test case, so it imports a fixture for the data it will export in the test")
+  def test_write_input_file___with_1d_time_units(self):
+    # globals
+    global INPUT_FILENAME, DATA_TABLE
+    
     # inputs
+    exchange = 'bitmex'
+    markets = ['BTC/USD']
     start = self.start
-    filename = INPUT_FILE_PATH
-    data_points = 3000
+    end = self.end
+    filename = INPUT_FILENAME
     time_unit = '1h'
 
     # expected outputs
@@ -153,8 +163,15 @@ class Predictor_Functions(TestCase):
     line4 = r'\d{4}-\d{2}-\d{2} \d{2}[:]\d{2}[:]\d{2}[.]\d{6}, \d0[.]\d+'
     line4_ptn = re.compile(line4, re.DOTALL)
 
-    # call the method under test
-    cache_input_data_file(start=start, data_points=data_points, time_units=time_unit)
+    # call the methods under test
+    market_data = fetch_market_data(exchange=exchange, markets=markets,
+                                    data_table=DATA_TABLE, time_units=time_unit,
+                                    start=start, end=end,
+                                    host=django_server, port=django_port)
+    initialize_csv(input_filename, markets,
+                   include_spread=include_spread, include_classification=include_classification)
+    write_input_file(input_filename, markets, market_data, spread_as_pct=True,
+                     include_spread=include_spread, include_classification=include_classification)
 
     # open the file just created
     with open(filename, 'r') as f:
