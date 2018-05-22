@@ -280,7 +280,7 @@ def initialize_csv(fq_input_filename, markets, include_spread=True, include_clas
     f.writelines(lines)
 
 
-def write_input_file(fq_input_filename, markets, market_data, include_spread=True, include_classification=False):
+def write_input_file(fq_input_filename, markets, market_data, include_spread=True, spread_as_pct=False, include_classification=False):
   """
   Create the input file from given market data
 
@@ -292,6 +292,8 @@ def write_input_file(fq_input_filename, markets, market_data, include_spread=Tru
   :type market_data: dict
   :param include_spread:
   :type include_spread: bool
+  :param spread_as_pct:
+  :type spread_as_pct: bool
   :param include_classification:
   :type include_classification: bool
   :return:
@@ -311,7 +313,10 @@ def write_input_file(fq_input_filename, markets, market_data, include_spread=Tru
         ask_size = float(row['ask_size'])
         bid_price = float(row['bid_price'])
         bid_size = float(row['bid_size'])
-        spread = ask_price - bid_price
+        if spread_as_pct:
+          spread = (ask_price - bid_price) / ask_price * 100.0 if ask_price != 0.0 else 0.0
+        else:
+          spread = ask_price - bid_price
 
         # calculate the classification of the spread
         if spread >= 2.0:
@@ -859,10 +864,8 @@ if __name__ == "__main__":
                                     host=django_server, port=django_port)
     initialize_csv(input_filename, markets,
                    include_spread=include_spread, include_classification=include_classification)
-    write_input_file(input_filename, markets, market_data,
+    write_input_file(input_filename, markets, market_data, spread_as_pct=True,
                      include_spread=include_spread, include_classification=include_classification)
-
-    exit(1)
 
   # read the input data file into local variables, so the
   # nupic predictor can use them to make its predictions
