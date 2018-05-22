@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" autoUpload="Always" serverName="test.binarycapital.io" persistUploadOnCheckin="false">
+  <component name="PublishConfigData" serverName="test.binarycapital.io" persistUploadOnCheckin="false">
     <serverData>
       <paths name="test.binarycapital.io">
         <serverdata>
           <mappings>
-            <mapping deploy="/opt/predictors" local="$PROJECT_DIR$" web="/" />
+            <mapping deploy="/opt/predictors/nupic-spread-predictor" local="$PROJECT_DIR$" web="/" />
           </mappings>
           <excludedPaths>
-            <excludedPath local="true" path="$PROJECT_DIR$/nupic.guides/nupredictor/model_output_files" />
+            <excludedPath local="true" path="$PROJECT_DIR$/nupredictor/model_output_files" />
           </excludedPaths>
         </serverdata>
       </paths>
@@ -20,6 +20,5 @@
         </serverdata>
       </paths>
     </serverData>
-    <option name="myAutoUpload" value="ALWAYS" />
   </component>
 </project>
