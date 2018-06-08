@@ -25,12 +25,11 @@ aggregationInfo:
   # aggregation function (e.g. sum). The function will be used to aggregate
   # multiple values of this field over the aggregation period.
   fields:
-  - [btcusd_open, mean]
-  - [btcusd_high, mean]
-  - [btcusd_low, mean]
-  - [btcusd_close, mean]
-  - [btcusd_volume, mean]
-  - [btcusd_lastSize, mean]
+  - [spread, mean]
+  - [btcusd_ask_price, mean]
+  - [btcusd_ask_size, mean]
+  - [btcusd_bid_price, mean]
+  - [btcusd_bid_size, mean]
   # If a time unit is not listed, 0 will be its default value.
   microseconds: 0
   milliseconds: 0
@@ -67,39 +66,33 @@ modelParams:
 
     # List of encoders and their parameters.
     encoders:
-      btcusd_open:
-        fieldname: btcusd_open
-        name: btcusd_open
+      spread:
+        fieldname: spread
+        name: spread
         resolution: 0.88
         seed: 1
         type: RandomDistributedScalarEncoder
-      btcusd_high:
-        fieldname: btcusd_high
-        name: btcusd_high
+      btcusd_ask_price:
+        fieldname: btcusd_ask_price
+        name: btcusd_ask_price
         resolution: 0.88
         seed: 1
         type: RandomDistributedScalarEncoder
-      btcusd_low:
-        fieldname: btcusd_low
-        name: btcusd_low
+      btcusd_ask_size:
+        fieldname: btcusd_ask_size
+        name: btcusd_ask_size
         resolution: 0.88
         seed: 1
         type: RandomDistributedScalarEncoder
-      btcusd_close:
-        fieldname: btcusd_close
-        name: btcusd_close
+      btcusd_bid_price:
+        fieldname: btcusd_bid_price
+        name: bid_price
         resolution: 0.88
         seed: 1
         type: RandomDistributedScalarEncoder
-      btcusd_volume:
-        fieldname: btcusd_volume
-        name: btcusd_volume
-        resolution: 0.88
-        seed: 1
-        type: RandomDistributedScalarEncoder
-      btcusd_lastSize:
-        fieldname: btcusd_lastSize
-        name: btcusd_lastSize
+      btcusd_bid_size:
+        fieldname: btcusd_bid_size
+        name: btcusd_bid_size
         resolution: 0.88
         seed: 1
         type: RandomDistributedScalarEncoder

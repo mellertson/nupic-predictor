@@ -1,3 +1,4 @@
+#!/opt/python_envs/nupic/bin/python
 import re
 import json
 import os, errno, shutil
@@ -12,6 +13,8 @@ from nupic.data.file_record_stream import FileRecordStream
 from optparse import OptionParser
 import pandas as pd
 from nupredictor.functions import get_files
+from nupredictor.utilities import parse_time_units
+import tzlocal
 
 
 __all__ = [
@@ -217,7 +220,7 @@ def fetch_market_data(exchange, markets, data_table, start, end, time_units,
     if response.status_code != 200:
       raise ValueError('No {}-{} data was found between {} and {} for {}'
                        .format(exchange, market, start, end, time_units))
-    data = pd.read_json(response.content, orient='index', precise_float=True)
+    data = pd.read_json(response.content, orient='record', precise_float=True)
 
     # verify there is at least 1 row of data in each data set
     if len(data) < 1:
@@ -230,14 +233,18 @@ def fetch_market_data(exchange, markets, data_table, start, end, time_units,
   start = datetime(1973, 1, 18)
   end = datetime(2500, 1, 18)
   for market, df in frames.items():
-    s = min(df.index)
-    e = max(df.index)
+    s = min(df['timestamp'])
+    e = max(df['timestamp'])
     start = s if s > start else start
     end = e if e < end else end
 
   # slice down the data frames to the common start and end dates
   for market, df in frames.items():
+    df = df.set_index('timestamp')
     frames[market] = df[start:end]
+
+    # slice down the data to the MAGIC NUMBER of records
+    frames[market] = frames[market][-MAGIC_N:]
 
   # return the data frames
   return frames
@@ -261,23 +268,23 @@ def initialize_csv(fq_input_filename, markets, include_spread=True, include_clas
   :rtype: None
   """
 
-  quote_fields = ['ask_price', 'ask_size', 'bid_price', 'bid_size']
+  price_fields = ['open', 'high', 'low', 'close', 'volume', 'lastSize']
   fields = ['timestamp']   # the list of field names to be included in the input file
   dtypes = ['datetime']
   thirds = ['T']
 
   # build the list of fields that will be included in the input file
-  if include_spread:
-    fields.append('spread')
-    dtypes.append('float')
-    thirds.append(' ')
-  if include_classification:
-    fields.append('classification')
-    dtypes.append('int')
-    thirds.append(' ')
+  # if include_spread:
+  #   fields.append('spread')
+  #   dtypes.append('float')
+  #   thirds.append(' ')
+  # if include_classification:
+  #   fields.append('classification')
+  #   dtypes.append('int')
+  #   thirds.append(' ')
   for market in markets:
     m = market.replace('/', '').lower()
-    for field in quote_fields:
+    for field in price_fields:
       fields.append('{}_{}'.format(m, field))
       dtypes.append('float')
       thirds.append(' ')
@@ -323,36 +330,40 @@ def write_input_file(fq_input_filename, markets, market_data, include_spread=Tru
         line.append(ts.strftime("%Y-%m-%d %H:%M:%S.%f"))
 
         # extract the variables from the row
-        ask_price = float(row['ask_price'])
-        ask_size = float(row['ask_size'])
-        bid_price = float(row['bid_price'])
-        bid_size = float(row['bid_size'])
-        if spread_as_pct:
-          spread = (ask_price - bid_price) / ask_price * 100.0 if ask_price != 0.0 else 0.0
-        else:
-          spread = ask_price - bid_price
+        open_price = float(row['open'])
+        high = float(row['high'])
+        low = float(row['low'])
+        close = float(row['close'])
+        volume = float(row['volume'])
+        lastSize = float(row['lastSize'])
+        # if spread_as_pct:
+        #   spread = (ask_price - bid_price) / ask_price * 100.0 if ask_price != 0.0 else 0.0
+        # else:
+        #   spread = ask_price - bid_price
 
         # calculate the classification of the spread
-        if spread >= 2.0:
-          classification = 5
-        elif spread < 2.0 and spread >= 1.0:
-          classification = 4
-        elif spread < 1.0 and spread > -1.0:
-          classification = 3
-        elif spread <= -1.0 and spread > -2.0:
-          classification = 2
-        else:
-          classification = 1
+        # if spread >= 2.0:
+        #   classification = 5
+        # elif spread < 2.0 and spread >= 1.0:
+        #   classification = 4
+        # elif spread < 1.0 and spread > -1.0:
+        #   classification = 3
+        # elif spread <= -1.0 and spread > -2.0:
+        #   classification = 2
+        # else:
+        #   classification = 1
 
         # append the values to the line
-        if include_spread:
-          line.append(str(spread))
-        if include_classification:
-          line.append(str(classification))
-        line.append(str(ask_price))
-        line.append(str(ask_size))
-        line.append(str(bid_price))
-        line.append(str(bid_size))
+        # if include_spread:
+        #   line.append(str(spread))
+        # if include_classification:
+        #   line.append(str(classification))
+        line.append(str(open_price))
+        line.append(str(high))
+        line.append(str(low))
+        line.append(str(close))
+        line.append(str(volume))
+        line.append(str(lastSize))
 
         # write the line into the file
         f.write(','.join(line) + '\n')
@@ -622,6 +633,8 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename,
   all_results = []
   scores = []
   row_col_len = len(str(DATA_POINTS))
+  tz_local = tzlocal.get_localzone()
+  tz_utc = pytz.utc
 
   # Create a data source for the network.
   dataSource = FileRecordStream(streamID=fq_input_filename)
@@ -701,8 +714,10 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename,
       # score = sum(scores) / len(scores) * 100
 
       # print out results
+      dt_utc = tz_utc.localize(TIMESTAMPS[iteration])
+      dt_local = dt_utc.astimezone(tz_local)
       row = '{}'.format(iteration + 1).rjust(row_col_len, ' ')
-      msg = "Row {}:\t{}\t".format(row, TIMESTAMPS[iteration])
+      msg = "Row {}:\t{}\t".format(row, dt_local)
       msg += "actual value:{:14.8f}\t".format(actual)
       msg += "predicted values:{:14.8f}\t".format(prediction)
       # msg += "{:14.8f}\t".format(prediction2)
@@ -711,12 +726,12 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename,
       # msg += "{:14.8f}\t".format(prediction5)
       # msg += "{}\t".format(correct_colored)
       # msg += "score: {:.2f}%\t".format(score)
-      # msg += "error: {:.2f}%\t".format(avg_pct_error)
+      msg += "error: {:.5f}%\t".format(avg_pct_error)
       msg += "confidence: {:.2f}%\t".format(oneStepConfidence * 100)
       print(msg)
 
       # Write results to output file
-      msg = "{},{},".format(iteration + 1, TIMESTAMPS[iteration])
+      msg = "{},{},".format(iteration + 1, dt_local)
       msg += "{:.8f},".format(actual)
       msg += "{:.8f},".format(prediction)
       # msg += "{:.8f},".format(prediction2)
@@ -725,7 +740,7 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename,
       # msg += "{:.8f},".format(prediction5)
       # msg += "{},".format(correct)
       # msg += "{:.1f},".format(score)
-      # msg += "{:.2f},".format(avg_pct_error)
+      msg += "{:.5f},".format(avg_pct_error)
       msg += "{:.8f}".format(oneStepConfidence * 100)
       if iteration == 0:
         msg = msg.replace('          ', '')
@@ -740,13 +755,14 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename,
 
 
 global EXPERIMENT_NAME, INPUT_FILENAME, RESULTS_FILENAME, MODEL_FILENAME, BASE_DIR, MODEL_INPUT_FILES_DIR
-global MODEL_OUTPUT_FILES_DIR, FQ_RESULTS_FILENAME, FQ_MODEL_FILENAME, FQ_MODEL_TEMPLATE_FILENAME, DATA_TABLE
+global MODEL_OUTPUT_FILES_DIR, FQ_RESULTS_FILENAME, FQ_MODEL_FILENAME, FQ_MODEL_TEMPLATE_FILENAME, DATA_TABLE, MAGIC_N
 
 # Input variables into the system
+MAGIC_N = 400
 EXCHANGE = 'bitmex'
 NMARKET = 'XBTM18'.lower()
 MARKET2 = 'XBTUSD'.lower()
-DATA_TABLE = 'quote'
+DATA_TABLE = 'trade'
 CURRENT_DATE_TIME = datetime.now().strftime("%Y.%m.%d.%H.%M").lower()
 CURRENT_DATE = datetime.now().strftime("%Y.%m.%d").lower()
 # CANDLESTICK_SIZE = '1h' # 1m = 1 minute, 5m = 5 minutes
@@ -807,26 +823,40 @@ def parse_options():
 
   usage = "usage: $prog [options]"
   parser = OptionParser(usage)
+  df = "{}/input_data.csv".format(MODEL_INPUT_FILES_DIR)
   parser.add_option('-c', "--create", dest="create_input_file", action="store_true", default=False,
-                    help="create the input file from data in the database")
-  parser.add_option('-f', "--file", dest="input_filename", default="{}/input_data.csv".format(MODEL_INPUT_FILES_DIR),
-                    help="specify the fully qualified path to a CSV filename to use as input data")
-  parser.add_option('-s', "--start", dest="start", default="2015-10-01",
-                    help="the start date to get data from, defaults to 10/01/2015")
-  parser.add_option('-e', "--end", dest="end", default="2018-4-01",
-                    help="the end date to get data till, defaults to 04/01/2018")
+    help="create the input file from data in the database")
+  parser.add_option('-f', "--file", dest="input_filename", default=df,
+    help="specify the fully qualified path to a CSV filename to store input data for the model (default = {})".format(df))
+  parser.add_option('-s', "--start", dest="start", default=None,
+    help="the start date to get data from")
+  parser.add_option('-e', "--end", dest="end", default=None,
+    help="the end date to get data till")
   parser.add_option('-d', "--server", dest="server_name", default="codehammer",
-                    help="the name of the Django server to get the data from")
+    help="""the name of the Django server to get the data from (default = "codehammer")""")
   parser.add_option('-p', "--port", dest="server_port", default="80",
-                    help="(default = 80) the port number the Django server is running on")
+    help="port number the Django server is running on (default = 80)")
   parser.add_option('-m', "--markets", dest="markets", default="BTC/USD",
-                    help="a list of market symbols, delimited by a semicolon")
-  parser.add_option('-t', "--time_units", dest="time_units", default='5m',
-                    help='the time units, either: "1m", "5m", "1h", "1d"')
-  parser.add_option('-P', "--predict", dest="predicted_field", default='spread',
-                    help="'-P' or '--predict' - the field name that will be predicted, e.g. 'spread' or 'm1_ask'")
+    help='a list of market symbols, delimited by a semicolon (default = "BTC/USD")')
+  parser.add_option('-t', "--time_units", dest="time_units", default='1m',
+    help='the time units, either: "1m", "5m", "1h", "1d" (default = "1m")')
+  parser.add_option('-P', "--predict", dest="predicted_field", default='btcusd_high',
+    help="""'-P' or '--predict' - the field name that will be predicted, e.g. 'btcusd_high' | 'btcusd_low' (default = "btcusd_high")""")
+  parser.add_option('-n', '--magic', dest='magic_number', default=400,
+    help='the magic number when training will stop and predictions will begin.')
 
   (options, args) = parser.parse_args()
+
+  # set default start date
+  if options.end is None:
+    end = datetime.now(tz=pytz.timezone('UTC'))
+    options.end = end
+
+  # set default end date
+  if options.start is None:
+    td = parse_time_units(options.time_units)
+    start = options.end - td
+    options.start = start
   return options, args
 
 
@@ -835,8 +865,20 @@ if __name__ == "__main__":
   options, args = parse_options()
   create_input_file = options.create_input_file
   input_filename = options.input_filename
-  start = parser.parse(options.start)
-  end = parser.parse(options.end)
+  MAGIC_N = int(options.magic_number)
+
+   # convert start date
+  if isinstance(options.start, str):
+    start = parser.parse(options.start)
+  else:
+    start = options.start
+
+  # convert end date
+  if isinstance(options.end, str):
+    end = parser.parse(options.end)
+  else:
+    end = options.end
+
   django_server = options.server_name
   django_port = options.server_port
   markets = options.markets
@@ -898,6 +940,9 @@ if __name__ == "__main__":
   # modify the permissions of the files in the output directory
   # so that everyone can read them
   modify_output_file_permissions(MODEL_OUTPUT_FILES_DIR)
+
+
+
 
 
 
