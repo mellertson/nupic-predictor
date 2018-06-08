@@ -173,7 +173,8 @@ def create_output_directory(fq_model_template_filename, fq_model_filename, model
   shutil.copymode(src=fq_model_template_filename, dst=fq_model_filename)
 
 
-def fetch_market_data(exchange, markets, data_table, start, end, time_units, username='mellertson', password='test', host='localhost', port=8000):
+def fetch_market_data(exchange, markets, data_table, start, end, time_units,
+                      username='mellertson', password='test', host='localhost', port=8000):
   """
   Get data from Django web-service
 
@@ -208,17 +209,20 @@ def fetch_market_data(exchange, markets, data_table, start, end, time_units, use
   # for each market...
   for market in markets:
     # build the input variables needed by the web-service
-    params1 = {'username': username, 'passwd': password, 'exchange': exchange, 'symbol': market, 'data_table': data_table, 'start': start, 'end': end, 'time_units': time_units}
+    params1 = {'username': username, 'passwd': password, 'exchange': exchange, 'symbol': market,
+               'data_table': data_table, 'start': start, 'end': end, 'time_units': time_units}
 
     # send the HTTP request and decode the JSON response
     response = requests.get(base_url, params=params1, timeout=60*60)
     if response.status_code != 200:
-      raise ValueError('No {}-{} data was found between {} and {} for {}'.format(exchange, market, start, end, time_units))
+      raise ValueError('No {}-{} data was found between {} and {} for {}'
+                       .format(exchange, market, start, end, time_units))
     data = pd.read_json(response.content, orient='index', precise_float=True)
 
     # verify there is at least 1 row of data in each data set
     if len(data) < 1:
-      raise ValueError('No {}-{} data was found between {} and {} for {}'.format(exchange, market, start, end, time_units))
+      raise ValueError('No {}-{} data was found between {} and {} for {}'
+                       .format(exchange, market, start, end, time_units))
 
     frames[market] = data
 
@@ -289,7 +293,8 @@ def initialize_csv(fq_input_filename, markets, include_spread=True, include_clas
     f.writelines(lines)
 
 
-def write_input_file(fq_input_filename, markets, market_data, include_spread=True, spread_as_pct=False, include_classification=False):
+def write_input_file(fq_input_filename, markets, market_data, include_spread=True,
+                     spread_as_pct=False, include_classification=False):
   """
   Create the input file from given market data
 
