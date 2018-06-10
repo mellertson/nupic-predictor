@@ -15,6 +15,8 @@ import pandas as pd
 from nupredictor.functions import get_files
 from nupredictor.utilities import parse_time_units
 import tzlocal
+from multiprocessing.connection import Client
+from socket import getfqdn, gethostname
 
 
 __all__ = [
@@ -35,6 +37,7 @@ __all__ = [
   'initialize_csv',
   'modify_output_file_permissions',
   'write_input_file',
+  'get_services',
 ]
 
 
@@ -752,6 +755,32 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename,
 
   # copy the results file, so it can be plotted
   # shutil.copyfile(fq_results_filename, os.path.join(BASE_DIR, 'results.csv'))
+
+
+def get_services(url, username, password):
+  """
+  Gets the "running" services from the Django web-service identified by the 'url'
+
+  :param url:
+  :type url: str
+  :param username:
+  :type username: str
+  :param password:
+  :type password: str
+  :return: Example: {'hostname': 'codehammer.binarycapital.io', 'port': 52000, 'authkey': 'password'}
+  :rtype: dict
+  """
+  params = {'username': username, 'password': password, 'name': 'bitmex'}
+  r = requests.get(url=url, params=params)
+  if r.status_code == 200:
+    services = json.loads(r.content)
+  else:
+    raise Exception('ERROR returned by Django server ({}): {}'.format(r.status_code, r.content))
+
+  for service in services:
+    if service['hostname'] == getfqdn(gethostname()):
+      return {'hostname': str(service['hostname']), 'port': service['port'], 'authkey': str(service['authkey'])}
+  raise Exception('Service was not returned by the Django server')
 
 
 global EXPERIMENT_NAME, INPUT_FILENAME, RESULTS_FILENAME, MODEL_FILENAME, BASE_DIR, MODEL_INPUT_FILES_DIR

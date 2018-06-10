@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import os
 from .nunetwork import *
 from .functions import get_files
+from socket import gethostname, getfqdn
 
 
 def heading(msg):
@@ -94,8 +95,6 @@ class Predictor_Functions(TestCase):
     for eO_date in eO_dates:
       self.assertIn(eO_date, aO_dates,
                     heading("Expected {} in the returned list of dates\n\nBut, got:\n{}".format(eO_date, aO_dates)))
-
-  """ """
 
   @skip("Need to re-write this test case, so it imports a fixture for the data it will export in the test")
   def test_get_data___with_1m_time_units____and_3000_data_points(self):
@@ -199,6 +198,35 @@ class Predictor_Functions(TestCase):
       self.assertEqual(timestamp, eO_timestamp,
                        heading("Expected the timestamp column = {}, but got {}".format(eO_timestamp, timestamp)))
 
+  ### get_services function ###
+
+  def test_get_services(self):
+    """
+    REQUIRED! This test cases requires a Django server to be running on port 8000 and have
+              a "running" service (meaning a Service record in the database with its state = 'Running'
+
+    :rtype: None
+    """
+
+    # inputs
+    django_server_name = gethostname()
+    url = 'http://{}:8000/ws/service/'.format(django_server_name)
+    username = 'mellertson'
+    password = '!cR1BhRtJCbCjBCQu&%q'
+
+    # expected output
+    eO = { 'hostname': getfqdn(gethostname()), 'port': 52000 }
+
+    # call the method under test
+    aO = get_services(url, username, password)
+
+    # verify
+    self.assertIn('authkey', aO)
+    eO.update({'authkey': aO['authkey']})
+    self.assertDictEqual(eO, aO)
+
+
+
 
 class Modify_Output_File(TestCase):
   """ Test the modify_output_file_permissions function """
@@ -235,8 +263,6 @@ class Modify_Output_File(TestCase):
       self.assertTrue(did_run, 'Permissions on file "{}" was not modified'.format(filename))
       all_lines_ran = True
     self.assertTrue(all_lines_ran, 'All lines in this test case were not executed')
-
-
 
 
 
