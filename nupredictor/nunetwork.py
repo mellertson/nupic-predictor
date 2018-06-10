@@ -626,7 +626,7 @@ def configureNetwork(network, predicted_field):
 
 
 def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename, predicted_field,
-                      market, prediction_type):
+                      market, prediction_type, time_units):
   """
   run the Nupic predictor, save the results to the 'model_output_files' directory
 
@@ -642,6 +642,8 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename,
   :type market: str
   :param prediction_type:
   :type prediction_type: str
+  :param time_units: Either: '1m' | '5m' | '1h' | '1d'
+  :type time_units: str
   :return:
   :rtype: Prediction
   """
@@ -676,7 +678,7 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename,
   del(ACTUALS[0])
   del(TIMESTAMPS[0])
   ACTUALS.append(0.0)
-  TIMESTAMPS.append(TIMESTAMPS[-1] + timedelta(minutes=5))
+  TIMESTAMPS.append(TIMESTAMPS[-1] + add_time(time_units=time_units))
 
   print('Saving results to "{}"'.format(fq_results_filename))
   with open(fq_results_filename, 'w+') as out_file:
@@ -1090,7 +1092,7 @@ if __name__ == "__main__":
     prediction = run_the_predictor(fq_input_filename=input_filename,
                       fq_model_filename=FQ_MODEL_FILENAME,
                       fq_results_filename=FQ_RESULTS_FILENAME,
-                      predicted_field=predicted_field, market=market, prediction_type='H')
+                      predicted_field=predicted_field, market=market, prediction_type='H', time_units=time_units)
 
     # modify the permissions of the files in the output directory
     # so that everyone can read them
