@@ -226,8 +226,6 @@ class Predictor_Functions(TestCase):
     self.assertDictEqual(eO, aO)
 
 
-
-
 class Modify_Output_File(TestCase):
   """ Test the modify_output_file_permissions function """
 

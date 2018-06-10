@@ -18,6 +18,10 @@ import tzlocal
 from multiprocessing.connection import Client
 from socket import getfqdn, gethostname
 
+SUBSCRIBED = 1
+UNSUBSCRIBED = 2
+INVALID_REQUEST = 400
+
 
 __all__ = [
   # global variables
@@ -831,6 +835,13 @@ RIGHT = '{}{}{} Right {}'.format(bcolors.BOLD, bcolors.OKBLUE, RIGHT_CHAR, bcolo
 WRONG = '{}{}{} Wrong {}'.format(bcolors.BOLD, bcolors.FAIL, WRONG_CHAR, bcolors.ENDC)
 
 
+def get_start_end_dates(time_units):
+  end = datetime.now(tz=pytz.timezone('UTC'))
+  td = parse_time_units(time_units)
+  start = end - td
+  return { 'start':start, 'end':end }
+
+
 def parse_options():
   """
   Parse command line options and return them
@@ -865,14 +876,17 @@ def parse_options():
     help="""the name of the Django server to get the data from (default = "codehammer")""")
   parser.add_option('-p', "--port", dest="server_port", default="80",
     help="port number the Django server is running on (default = 80)")
-  parser.add_option('-m', "--markets", dest="markets", default="BTC/USD",
-    help='a list of market symbols, delimited by a semicolon (default = "BTC/USD")')
+  parser.add_option('-m', "--market", dest="market", default="BTC/USD",
+    help='a standardized market symbol (default = "BTC/USD")')
   parser.add_option('-t', "--time_units", dest="time_units", default='1m',
     help='the time units, either: "1m", "5m", "1h", "1d" (default = "1m")')
   parser.add_option('-P', "--predict", dest="predicted_field", default='btcusd_high',
     help="""'-P' or '--predict' - the field name that will be predicted, e.g. 'btcusd_high' | 'btcusd_low' (default = "btcusd_high")""")
   parser.add_option('-n', '--magic', dest='magic_number', default=400,
     help='the magic number when training will stop and predictions will begin.')
+  parser.add_option('-u', '--username', dest='username', help='The user name to connect to the Django server as')
+  parser.add_option('-p', '--password', dest='password', help="The Django user's password")
+  parser.add_option('--topic', dest='topic', default='tradeBin1m', help="The SubPub topic to subscribe to")
 
   (options, args) = parser.parse_args()
 
@@ -895,33 +909,35 @@ if __name__ == "__main__":
   create_input_file = options.create_input_file
   input_filename = options.input_filename
   MAGIC_N = int(options.magic_number)
+  username = options.username
+  password = options.password
+  pid = os.getpid()
 
-   # convert start date
-  if isinstance(options.start, str):
-    start = parser.parse(options.start)
+  # if this is a development workstation...
+  if gethostname() in ['codehammer']:
+    url = 'http://{}:8000/ws/service/'.format(gethostname())
+  # if this is a production or test server...
   else:
-    start = options.start
+    url = 'https://{}/ws/service'.format(getfqdn(gethostname()))
 
-  # convert end date
-  if isinstance(options.end, str):
-    end = parser.parse(options.end)
-  else:
-    end = options.end
+  # get the Bitmex Data Server's hostname, port, and authentication key
+  service = get_services(url=url, username=username, password=password)
+  publisher_address = (service['hostname'], service['port'])
 
+  # extract variables from the command line options
   django_server = options.server_name
   django_port = options.server_port
-  markets = options.markets
+  market = options.market
   time_units = options.time_units
   predicted_field = options.predicted_field
   include_spread = True
   include_classification = False
 
   # INPUT and OUTPUT file names
-  market_symbols = markets.lower().replace('/', '').replace(';', '-')
-  markets = markets.split(';')
+  market_symbol = market.lower().replace('/', '').replace(';', '-')
   SUFFIX_NAME = 'spread-future-swap-{}'.format(time_units)
-  EXPERIMENT_NAME = '{}.{}.{}.{}.{}'.format(CURRENT_DATE_TIME, EXCHANGE, market_symbols, DATA_TABLE, SUFFIX_NAME)
-  INPUT_FILENAME = '{}.{}.{}.csv'.format(EXCHANGE, market_symbols, DATA_TABLE)
+  EXPERIMENT_NAME = '{}.{}.{}.{}.{}'.format(CURRENT_DATE_TIME, EXCHANGE, market_symbol, DATA_TABLE, SUFFIX_NAME)
+  INPUT_FILENAME = '{}.{}.{}.csv'.format(EXCHANGE, market_symbol, DATA_TABLE)
   RESULTS_FILENAME = '{}.results.csv'.format(EXPERIMENT_NAME)
   MODEL_FILENAME = '{}.model.yaml'.format(EXPERIMENT_NAME)
 
@@ -933,42 +949,71 @@ if __name__ == "__main__":
   FQ_MODEL_FILENAME = os.path.join(MODEL_OUTPUT_FILES_DIR, MODEL_FILENAME)
   FQ_MODEL_TEMPLATE_FILENAME = os.path.join(MODEL_INPUT_FILES_DIR, "model-one-market-quotes.yaml")
 
-  # create the 'model_output_files' directory and copy the model template
-  # file into the 'model_output_files' directory and rename it
-  create_output_directory(fq_model_template_filename=FQ_MODEL_TEMPLATE_FILENAME,
-                          fq_model_filename=FQ_MODEL_FILENAME,
-                          model_output_files_dir=MODEL_OUTPUT_FILES_DIR)
+  # Subscriber client connection
+  connection = Client(address=publisher_address, authkey=service['authkey'])
+  subscription_request = {
+    'action': 'subscribe',
+    'hostname': getfqdn(),
+    'pid': os.getpid(),
+    'client': connection,
+    'smarket': market,
+    'topic': options.topic,
+  }
+  response = connection.send(subscription_request)
 
-  # if the input data file does not exist, get the data from
-  # the Django server and cache it in a local CSV file in
-  # the 'model_input_files' directory
-  if create_input_file:
-    market_data = fetch_market_data(exchange=EXCHANGE, markets=markets,
-                                    data_table=DATA_TABLE, time_units=time_units,
-                                    start=start, end=end,
-                                    host=django_server, port=django_port)
-    initialize_csv(input_filename, markets,
-                   include_spread=include_spread, include_classification=include_classification)
-    write_input_file(input_filename, markets, market_data, spread_as_pct=True,
+  if response == SUBSCRIBED:
+    # the server accepted our subscription request
+    print('Subscription request accepted by the Bitmex Data Server')
+  elif response == INVALID_REQUEST:
+    # the server rejected out subscription request
+    msg = 'Subscription request was REJECTED by the Bitmex Data Server'
+    print(msg)
+    raise Exception(msg)
+
+  while True:
+    # block until we receive a price update from the Bitmex Data Server
+    data = connection.recv()
+
+    # re-caclulate the start and end dates for the input data file
+    start = get_start_end_dates(time_units=time_units)['start']
+    end = get_start_end_dates(time_units=time_units)['end']
+
+    # create the 'model_output_files' directory and copy the model template
+    # file into the 'model_output_files' directory and rename it
+    create_output_directory(fq_model_template_filename=FQ_MODEL_TEMPLATE_FILENAME,
+                            fq_model_filename=FQ_MODEL_FILENAME,
+                            model_output_files_dir=MODEL_OUTPUT_FILES_DIR)
+
+    # if the input data file does not exist, get the data from
+    # the Django server and cache it in a local CSV file in
+    # the 'model_input_files' directory
+    if create_input_file:
+      market_data = fetch_market_data(exchange=EXCHANGE, markets=market,
+                                      data_table=DATA_TABLE, time_units=time_units,
+                                      start=start, end=end,
+                                      host=django_server, port=django_port)
+      initialize_csv(input_filename, market,
                      include_spread=include_spread, include_classification=include_classification)
+      write_input_file(input_filename, market, market_data, spread_as_pct=True,
+                       include_spread=include_spread, include_classification=include_classification)
 
-  # read the input data file into local variables, so the
-  # nupic predictor can use them to make its predictions
-  if file_exists(input_filename):
-    read_input_file(fq_input_filename=input_filename)
-  else:
-    raise ValueError("Filename '{}' does not exist".format(input_filename))
+    # read the input data file into local variables, so the
+    # nupic predictor can use them to make its predictions
+    if file_exists(input_filename):
+      read_input_file(fq_input_filename=input_filename)
+    else:
+      raise ValueError("Filename '{}' does not exist".format(input_filename))
 
-  # run the Nupic predictor, make the predictions, and
-  # save the results to the 'model_output_files' directory
-  run_the_predictor(fq_input_filename=input_filename,
-                    fq_model_filename=FQ_MODEL_FILENAME,
-                    fq_results_filename=FQ_RESULTS_FILENAME,
-                    predicted_field=predicted_field)
+    # run the Nupic predictor, make the predictions, and
+    # save the results to the 'model_output_files' directory
+    run_the_predictor(fq_input_filename=input_filename,
+                      fq_model_filename=FQ_MODEL_FILENAME,
+                      fq_results_filename=FQ_RESULTS_FILENAME,
+                      predicted_field=predicted_field)
 
-  # modify the permissions of the files in the output directory
-  # so that everyone can read them
-  modify_output_file_permissions(MODEL_OUTPUT_FILES_DIR)
+    # modify the permissions of the files in the output directory
+    # so that everyone can read them
+    modify_output_file_permissions(MODEL_OUTPUT_FILES_DIR)
 
 
 
