@@ -45,6 +45,20 @@ __all__ = [
 ]
 
 
+class Prediction(object):
+  def __init__(self, time_predicted, exchange, market, time_units,
+               prediction_type, prediction, confidence, actual, pct_error):
+    self.time_predicted = time_predicted
+    self.exchange = exchange
+    self.market = market
+    self.time_units = time_units
+    self.prediction_type = prediction_type
+    self.prediction = prediction
+    self.confidence = confidence
+    self.actual = actual
+    self.pct_error = pct_error
+
+
 class bcolors(object):
   HEADER = '\033[95m'
   OKBLUE = '\033[94m'
@@ -611,7 +625,8 @@ def configureNetwork(network, predicted_field):
   network.regions["classifier"].setParameter("inferenceMode", 1)
 
 
-def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename, predicted_field):
+def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename, predicted_field,
+                      market, prediction_type):
   """
   run the Nupic predictor, save the results to the 'model_output_files' directory
 
@@ -623,7 +638,12 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename,
   :type fq_results_filename: str
   :param predicted_field: The "fieldname", identified in the model parameters file, which will be predicted, e.g. "spread" or "m1_ask"
   :type predicted_field: str
+  :param market:
+  :type market: str
+  :param prediction_type:
+  :type prediction_type: str
   :return:
+  :rtype: Prediction
   """
 
   # create the CSV file
@@ -757,8 +777,62 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename,
       last_actual = actual
       # last_prediction = prediction
 
+      if iteration >= numRecords:
+        p = Prediction(
+          time_predicted=tz_utc.localize(TIMESTAMPS[-1]),
+          exchange=EXCHANGE,
+          market=market,
+          time_units=time_units,
+          prediction_type=prediction_type,
+          prediction=prediction,
+          confidence=oneStepConfidence * 100,
+          actual=actual,
+          pct_error=error)
+        print('\nNOTE! This is prediction {} out of {}'.format(iteration, numRecords))
+        print('\tSending prediction to database: {}'.format(p))
+        return p
+
   # copy the results file, so it can be plotted
   # shutil.copyfile(fq_results_filename, os.path.join(BASE_DIR, 'results.csv'))
+
+
+def store_prediction(url, username, password, action, prediction):
+  """
+  Sends the prediction to the Django server
+
+  :param url:
+  :param username:
+  :param password:
+  :param action:
+  :param prediction:
+  :type prediction: Prediction
+  :return:
+  :raise: Exception
+  """
+  if action == 'add':
+    prediction_url = '{}/ws/prediction/add/'.format(url)
+  elif action == 'update':
+    prediction_url = '{}/ws/prediction/update/'.format(url)
+  else:
+    raise ValueError("Bad value in 'action' parameter: {}".format(action))
+  params = dict(
+    action=action,
+    username=username,
+    password=password,
+    time_predicted=prediction.time_predicted,
+    exchange=prediction.exchange,
+    market=prediction.market,
+    time_units=prediction.time_units,
+    type=prediction.prediction_type,
+    prediction=prediction.prediction,
+    confidence=prediction.confidence)
+  r = requests.get(url=prediction_url, params=params)
+  if r.status_code == 200:
+    print("Prediction successfully sent to server: '{}'".format(prediction_url))
+  else:
+    msg = "ERROR: Prediction failed to send to server: '{}'".format(prediction_url)
+    print(msg)
+    raise Exception(msg)
 
 
 def get_services(url, username, password):
@@ -884,8 +958,8 @@ def parse_options():
     help="""'-P' or '--predict' - the field name that will be predicted, e.g. 'btcusd_high' | 'btcusd_low' (default = "btcusd_high")""")
   parser.add_option('-n', '--magic', dest='magic_number', default=400,
     help='the magic number when training will stop and predictions will begin.')
-  parser.add_option('-u', '--username', dest='username', help='The user name to connect to the Django server as')
-  parser.add_option('-p', '--password', dest='password', help="The Django user's password")
+  parser.add_option('--username', dest='username', help='The user name to connect to the Django server as')
+  parser.add_option('--password', dest='password', help="The Django user's password")
   parser.add_option('--topic', dest='topic', default='tradeBin1m', help="The SubPub topic to subscribe to")
 
   (options, args) = parser.parse_args()
@@ -915,13 +989,14 @@ if __name__ == "__main__":
 
   # if this is a development workstation...
   if gethostname() in ['codehammer']:
-    url = 'http://{}:8000/ws/service/'.format(gethostname())
+    url = 'http://{}:8000'.format(gethostname())
   # if this is a production or test server...
   else:
-    url = 'https://{}/ws/service'.format(getfqdn(gethostname()))
+    url = 'https://{}'.format(getfqdn(gethostname()))
 
   # get the Bitmex Data Server's hostname, port, and authentication key
-  service = get_services(url=url, username=username, password=password)
+  services_url = '{}/ws/service'.format(url)
+  service = get_services(url=services_url, username=username, password=password)
   publisher_address = (service['hostname'], service['port'])
 
   # extract variables from the command line options
@@ -959,7 +1034,8 @@ if __name__ == "__main__":
     'smarket': market,
     'topic': options.topic,
   }
-  response = connection.send(subscription_request)
+  connection.send(subscription_request)
+  response = connection.recv()
 
   if response == SUBSCRIBED:
     # the server accepted our subscription request
@@ -988,13 +1064,13 @@ if __name__ == "__main__":
     # the Django server and cache it in a local CSV file in
     # the 'model_input_files' directory
     if create_input_file:
-      market_data = fetch_market_data(exchange=EXCHANGE, markets=market,
+      market_data = fetch_market_data(exchange=EXCHANGE, markets=[market],
                                       data_table=DATA_TABLE, time_units=time_units,
                                       start=start, end=end,
                                       host=django_server, port=django_port)
-      initialize_csv(input_filename, market,
+      initialize_csv(input_filename, [market],
                      include_spread=include_spread, include_classification=include_classification)
-      write_input_file(input_filename, market, market_data, spread_as_pct=True,
+      write_input_file(input_filename, [market], market_data, spread_as_pct=True,
                        include_spread=include_spread, include_classification=include_classification)
 
     # read the input data file into local variables, so the
@@ -1006,14 +1082,17 @@ if __name__ == "__main__":
 
     # run the Nupic predictor, make the predictions, and
     # save the results to the 'model_output_files' directory
-    run_the_predictor(fq_input_filename=input_filename,
+    prediction = run_the_predictor(fq_input_filename=input_filename,
                       fq_model_filename=FQ_MODEL_FILENAME,
                       fq_results_filename=FQ_RESULTS_FILENAME,
-                      predicted_field=predicted_field)
+                      predicted_field=predicted_field, market=market, prediction_type='H')
 
     # modify the permissions of the files in the output directory
     # so that everyone can read them
     modify_output_file_permissions(MODEL_OUTPUT_FILES_DIR)
+
+    # send the prediction to the Django server
+    store_prediction(url=url, username=username, password=password, action='add', prediction=prediction)
 
 
 
