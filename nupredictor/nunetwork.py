@@ -709,6 +709,7 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename,
       # calculate error and actuals VS predicted
       error = (actual - prediction) / actual * 100 if abs(actual) > 0 else 0.0
       actual_change = (actual - last_actual) / actual * 100 if abs(actual) > 0 else 0.0
+
       predicted_change = (prediction - last_actual) / last_actual * 100 if iteration > 0 else 0.0
 
       ###################################################################################################
@@ -777,7 +778,7 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename,
       last_actual = actual
       # last_prediction = prediction
 
-      if iteration >= numRecords:
+      if iteration >= numRecords - 1:
         p = Prediction(
           time_predicted=tz_utc.localize(TIMESTAMPS[-1]),
           exchange=EXCHANGE,
@@ -1048,7 +1049,11 @@ if __name__ == "__main__":
 
   while True:
     # block until we receive a price update from the Bitmex Data Server
-    data = connection.recv()
+    try:
+      data = connection.recv()
+    except EOFError:
+      print('The Bitmex Data Server disconnected, shutting down...')
+      exit(1)
 
     # re-caclulate the start and end dates for the input data file
     start = get_start_end_dates(time_units=time_units)['start']
