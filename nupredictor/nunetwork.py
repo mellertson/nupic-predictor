@@ -995,7 +995,7 @@ if __name__ == "__main__":
     url = 'http://{}:8000'.format(gethostname())
   # if this is a production or test server...
   else:
-    url = 'https://{}'.format(getfqdn(gethostname()))
+    url = 'http://{}'.format(getfqdn(gethostname()))
 
   # get the Bitmex Data Server's hostname, port, and authentication key
   services_url = '{}/ws/service'.format(url)
