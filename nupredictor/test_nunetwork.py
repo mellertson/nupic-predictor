@@ -200,6 +200,7 @@ class Predictor_Functions(TestCase):
 
   ### get_services function ###
 
+  @skip('Need to re-write this test, so that it doesnt depend on a running Django server.')
   def test_get_services(self):
     """
     REQUIRED! This test cases requires a Django server to be running on port 8000 and have
