@@ -6,7 +6,7 @@
 # Description: Nupic Predictor (nupredict)
 ### END INIT INFO
 
-PID_FILE="/var/run/$SERVICE_NAME.pid"
+PID_FILE="/var/run/nupredict.pid"
 
 
 start() {
