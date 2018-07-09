@@ -1050,7 +1050,7 @@ if __name__ == "__main__":
     raise Exception(msg)
 
   while True:
-    # block until we receive a price update from the Bitmex Data Server
+    # wait until we receive a price update from the Bitmex Data Server (Data Manager (DM))
     try:
       data = connection.recv()
     except EOFError:
