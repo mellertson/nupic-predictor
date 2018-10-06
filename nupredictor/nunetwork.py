@@ -122,6 +122,7 @@ def calculate_start_date(end_date, data_points, time_units):
   :type time_units: str
   :return:
   """
+
   td = add_time(time_units=time_units)
   start_date = end_date - (td * data_points)
   return start_date
@@ -160,6 +161,7 @@ def get_start_dates(start_dt, data_points, time_units):
   :type time_units: str
   :rtype: list
   """
+
   dates = [start_dt]
   td = add_time(time_units=time_units) * 500
   blocks = int(data_points / 500.0)
