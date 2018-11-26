@@ -18,6 +18,7 @@ import tzlocal
 from multiprocessing.connection import Client
 from socket import getfqdn, gethostname
 
+
 SUBSCRIBED = 1
 UNSUBSCRIBED = 2
 INVALID_REQUEST = 400
@@ -229,7 +230,7 @@ def fetch_market_data(exchange, markets, data_table, start, end, time_units,
   """
 
   # local variables
-  base_url = 'http://{}:{}/ws/data/get'.format(host, port)
+  base_url = 'http://{}:{}/bc/data/get'.format(host, port)
   frames = {}
 
   # for each market...
@@ -456,10 +457,6 @@ def read_input_file(fq_input_filename):
           # read in the next line
           line = f.readline()
           i += 1
-          if i % 500 == 0:
-              print("Read {} lines...".format(i))
-
-  print('Done reading the input file.')
 
 
 def createDataOutLink(network, sensorRegionName, regionName):
@@ -682,7 +679,6 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename,
   ACTUALS.append(0.0)
   TIMESTAMPS.append(TIMESTAMPS[-1] + add_time(time_units=time_units))
 
-  print('Saving results to "{}"'.format(fq_results_filename))
   with open(fq_results_filename, 'w+') as out_file:
     # output results file header
     header = ','.join(['Row', 'Timestamp',
@@ -692,7 +688,6 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename,
               'Error', 'Confidence'])
     header += '\n'
     out_file.write(header)
-    print(header)
     N = 1  # Run the network, N iterations at a time.
     for iteration in range(0, numRecords, N):
       actual = ACTUALS[iteration]
@@ -760,7 +755,7 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename,
       # msg += "score: {:.2f}%\t".format(score)
       msg += "error: {:.5f}%\t".format(avg_pct_error)
       msg += "confidence: {:.2f}%\t".format(oneStepConfidence * 100)
-      print(msg)
+      # print(msg)
 
       # Write results to output file
       msg = "{},{},".format(iteration + 1, dt_local)
@@ -793,8 +788,6 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename,
           confidence=oneStepConfidence * 100,
           actual=actual,
           pct_error=error)
-        print('\nNOTE! This is prediction {} out of {}'.format(iteration, numRecords))
-        print('\tSending prediction to database: {}'.format(p))
         return p
 
   # copy the results file, so it can be plotted
@@ -832,12 +825,12 @@ def store_prediction(url, username, password, action, prediction):
     prediction=prediction.prediction,
     confidence=prediction.confidence)
   r = requests.get(url=prediction_url, params=params)
-  if r.status_code == 200:
-    print("Prediction successfully sent to server: '{}'".format(prediction_url))
-  else:
-    msg = "ERROR: Prediction failed to send to server: '{}'".format(prediction_url)
-    print(msg)
-    raise Exception(msg)
+  # if r.status_code == 200:
+  #   print("Prediction successfully sent to server: '{}'".format(prediction_url))
+  # else:
+  #   msg = "ERROR: Prediction failed to send to server: '{}'".format(prediction_url)
+  #   print(msg)
+  #   raise Exception(msg)
 
 
 def get_services(url, username, password):
@@ -993,19 +986,19 @@ if __name__ == "__main__":
   pid = os.getpid()
 
   #################################################################################
-  # set the 'url'
-  # if this is a development workstation...
-  if gethostname() in ['codehammer', 'dev']:
-    url = 'http://{}:8000'.format(gethostname())
-  # if this is a production or test server...
-  else:
-    url = 'http://{}'.format(getfqdn(gethostname()))
+  # # set the 'url'
+  # # if this is a development workstation...
+  # if gethostname() in ['codehammer', 'dev']:
+  #   url = 'http://{}:8000'.format(gethostname())
+  # # if this is a production or test server...
+  # else:
+  #   url = 'http://{}'.format(getfqdn(gethostname()))
 
   #################################################################################
-  # get the Bitmex Data Server's hostname, port, and authentication key
-  services_url = '{}/ws/service'.format(url)
-  service = get_services(url=services_url, username=username, password=password)
-  publisher_address = (service['hostname'], service['port'])
+  # # get the Bitmex Data Server's hostname, port, and authentication key
+  # services_url = '{}/ws/service'.format(url)
+  # service = get_services(url=services_url, username=username, password=password)
+  # publisher_address = (service['hostname'], service['port'])
 
   #################################################################################
   # extract variables from the command line options
@@ -1036,36 +1029,37 @@ if __name__ == "__main__":
   FQ_MODEL_TEMPLATE_FILENAME = os.path.join(MODEL_INPUT_FILES_DIR, "model-one-market-quotes.yaml")
 
   #################################################################################
-  # Subscriber client connection
-  connection = Client(address=publisher_address, authkey=service['authkey'])
-  subscription_request = {
-    'action': 'subscribe',
-    'hostname': getfqdn(),
-    'pid': os.getpid(),
-    'client': connection,
-    'smarket': market,
-    'topic': options.topic,
-  }
-  connection.send(subscription_request)
-  response = connection.recv()
-
-  if response == SUBSCRIBED:
-    # the server accepted our subscription request
-    print('Subscription request accepted by the Bitmex Data Server')
-  elif response == INVALID_REQUEST:
-    # the server rejected out subscription request
-    msg = 'Subscription request was REJECTED by the Bitmex Data Server'
-    print(msg)
-    raise Exception(msg)
+  # # Subscriber client connection
+  # connection = Client(address=publisher_address, authkey=service['authkey'])
+  # subscription_request = {
+  #   'action': 'subscribe',
+  #   'hostname': getfqdn(),
+  #   'pid': os.getpid(),
+  #   'client': connection,
+  #   'smarket': market,
+  #   'topic': options.topic,
+  # }
+  # connection.send(subscription_request)
+  # response = connection.recv()
+  #
+  # if response == SUBSCRIBED:
+  #   # the server accepted our subscription request
+  #   print('Subscription request accepted by the Bitmex Data Server')
+  # elif response == INVALID_REQUEST:
+  #   # the server rejected out subscription request
+  #   msg = 'Subscription request was REJECTED by the Bitmex Data Server'
+  #   print(msg)
+  #   raise Exception(msg)
 
 
   while True:
     #################################################################################
     # wait until we receive a price update from the Bitmex Data Server (Data Manager (DM))
     try:
-      data = connection.recv()
+      # data = connection.recv()
+      # TODO: HIGH: block until the next line is read from stdin
+
     except EOFError:
-      print('The Bitmex Data Server disconnected, shutting down...')
       exit(1)
 
     # re-caclulate the start and end dates for the input data file
@@ -1113,8 +1107,10 @@ if __name__ == "__main__":
     modify_output_file_permissions(MODEL_OUTPUT_FILES_DIR)
 
     #################################################################################
-    # send the prediction to the Django server
-    store_prediction(url=url, username=username, password=password, action='add', prediction=prediction)
+    # # send the prediction to the Django server
+    # store_prediction(url=url, username=username, password=password, action='add', prediction=prediction)
+    # TODO: HIGH: return the prediction via stdout using 'print()'
+
 
 
 
