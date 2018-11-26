@@ -1,4 +1,4 @@
-#!/opt/python_envs/nupic/bin/python
+#!/usr/bin/env python
 import re
 import json
 import os, errno, shutil
@@ -992,18 +992,22 @@ if __name__ == "__main__":
   password = options.password
   pid = os.getpid()
 
+  #################################################################################
+  # set the 'url'
   # if this is a development workstation...
-  if gethostname() in ['codehammer']:
+  if gethostname() in ['codehammer', 'dev']:
     url = 'http://{}:8000'.format(gethostname())
   # if this is a production or test server...
   else:
     url = 'http://{}'.format(getfqdn(gethostname()))
 
+  #################################################################################
   # get the Bitmex Data Server's hostname, port, and authentication key
   services_url = '{}/ws/service'.format(url)
   service = get_services(url=services_url, username=username, password=password)
   publisher_address = (service['hostname'], service['port'])
 
+  #################################################################################
   # extract variables from the command line options
   django_server = options.server_name
   django_port = options.server_port
@@ -1013,6 +1017,7 @@ if __name__ == "__main__":
   include_spread = True
   include_classification = False
 
+  #################################################################################
   # INPUT and OUTPUT file names
   market_symbol = market.lower().replace('/', '').replace(';', '-')
   SUFFIX_NAME = 'spread-future-swap-{}'.format(time_units)
@@ -1021,6 +1026,7 @@ if __name__ == "__main__":
   RESULTS_FILENAME = '{}.results.csv'.format(EXPERIMENT_NAME)
   MODEL_FILENAME = '{}.model.yaml'.format(EXPERIMENT_NAME)
 
+  #################################################################################
   # INPUT and OUTPUT directory names
   BASE_DIR = os.path.dirname(os.path.abspath(__file__))
   MODEL_INPUT_FILES_DIR = os.path.join(BASE_DIR, 'model_input_files')
@@ -1029,6 +1035,7 @@ if __name__ == "__main__":
   FQ_MODEL_FILENAME = os.path.join(MODEL_OUTPUT_FILES_DIR, MODEL_FILENAME)
   FQ_MODEL_TEMPLATE_FILENAME = os.path.join(MODEL_INPUT_FILES_DIR, "model-one-market-quotes.yaml")
 
+  #################################################################################
   # Subscriber client connection
   connection = Client(address=publisher_address, authkey=service['authkey'])
   subscription_request = {
@@ -1051,7 +1058,9 @@ if __name__ == "__main__":
     print(msg)
     raise Exception(msg)
 
+
   while True:
+    #################################################################################
     # wait until we receive a price update from the Bitmex Data Server (Data Manager (DM))
     try:
       data = connection.recv()
@@ -1063,12 +1072,14 @@ if __name__ == "__main__":
     start = get_start_end_dates(time_units=time_units)['start']
     end = get_start_end_dates(time_units=time_units)['end']
 
+    #################################################################################
     # create the 'model_output_files' directory and copy the model template
     # file into the 'model_output_files' directory and rename it
     create_output_directory(fq_model_template_filename=FQ_MODEL_TEMPLATE_FILENAME,
                             fq_model_filename=FQ_MODEL_FILENAME,
                             model_output_files_dir=MODEL_OUTPUT_FILES_DIR)
 
+    #################################################################################
     # if the input data file does not exist, get the data from
     # the Django server and cache it in a local CSV file in
     # the 'model_input_files' directory
@@ -1089,6 +1100,7 @@ if __name__ == "__main__":
     else:
       raise ValueError("Filename '{}' does not exist".format(input_filename))
 
+    #################################################################################
     # run the Nupic predictor, make the predictions, and
     # save the results to the 'model_output_files' directory
     prediction = run_the_predictor(fq_input_filename=input_filename,
@@ -1100,6 +1112,7 @@ if __name__ == "__main__":
     # so that everyone can read them
     modify_output_file_permissions(MODEL_OUTPUT_FILES_DIR)
 
+    #################################################################################
     # send the prediction to the Django server
     store_prediction(url=url, username=username, password=password, action='add', prediction=prediction)
 

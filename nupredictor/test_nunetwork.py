@@ -13,10 +13,13 @@ def heading(msg):
 
 
 class Predictor_Functions(TestCase):
+  
   def setUp(self):
     self.start = datetime(2018, 1, 1)
     self.end = self.start + timedelta(days=30)
     self.format = "%Y-%m-%d %H:%M:%S.000000"
+
+  # test: calculate_start_date()
 
   def test_calculate_start_date___with_1d_time_units(self):
     # inputs
@@ -32,6 +35,8 @@ class Predictor_Functions(TestCase):
 
     # verify
     self.assertEqual(eO, aO)
+
+  # test: get_start_dates()
 
   def test_get_start_dates____with_1m_time_units(self):
     # inputs
@@ -96,6 +101,8 @@ class Predictor_Functions(TestCase):
       self.assertIn(eO_date, aO_dates,
                     heading("Expected {} in the returned list of dates\n\nBut, got:\n{}".format(eO_date, aO_dates)))
 
+  # test: get_data()
+
   @skip("Need to re-write this test case, so it imports a fixture for the data it will export in the test")
   def test_get_data___with_1m_time_units____and_3000_data_points(self):
     # inputs
@@ -140,6 +147,8 @@ class Predictor_Functions(TestCase):
       eO_timestamp = (start + timedelta(minutes=1) * (i - 3)).strftime(self.format)
       self.assertEqual(timestamp, eO_timestamp,
                        heading("Expected the timestamp column = {}, but got {}".format(eO_timestamp, timestamp)))
+
+  # test: write_input_file()
 
   @skip("Need to re-write this test case, so it imports a fixture for the data it will export in the test")
   def test_write_input_file___with_1d_time_units(self):
@@ -198,9 +207,9 @@ class Predictor_Functions(TestCase):
       self.assertEqual(timestamp, eO_timestamp,
                        heading("Expected the timestamp column = {}, but got {}".format(eO_timestamp, timestamp)))
 
-  ### get_services function ###
+  # test: get_services()
 
-  @skip('Need to re-write this test, so that it doesnt depend on a running Django server.')
+  @skip("Need to re-write this test, so that it doesn't depend on a running Django server.")
   def test_get_services(self):
     """
     REQUIRED! This test cases requires a Django server to be running on port 8000 and have
@@ -238,7 +247,6 @@ class Modify_Output_File(TestCase):
 
   def tearDown(self):
     os.system(self.cmd)
-
 
   def test_modify_output_file_permissions(self):
     # inputs
