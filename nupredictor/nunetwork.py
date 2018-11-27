@@ -2,6 +2,7 @@
 import re
 import json
 import os, errno, shutil
+import sys
 import yaml
 import requests
 from dateutil import parser
@@ -59,24 +60,28 @@ class Prediction(object):
     self.actual = actual
     self.pct_error = pct_error
 
-  def to_json(self):
+  def to_dict(self):
     """
-    Converts the prediction to a json string
+    Converts the prediction to a python dictionary
 
-    :return:
-    :rtype: str
+    :rtype: dict
     """
-    json.dumps({
-      'time_predicted': self.time_predicted,
-      'exchange': self.exchange,
-      'market': self.market,
+    return {
+      'predicted_time': self.time_predicted,
+      'market_id': '{}-{}'.format(self.exchange, self.market),
       'timeframe': self.timeframe,
-      'prediction_type': self.prediction_type,
-      'prediction': self.prediction,
+      'value': self.prediction,
+      'value_str': str(self.prediction),
       'confidence': self.confidence,
-      'actual': self.actual,
-      'pct_error': self.pct_error,
-    })
+      'actual_value': self.actual,
+      'actual_value_str': str(self.actual),
+      'pct_diff': self.pct_error,
+      'attribute': None,
+      'data_type': 'float',
+      'predictor': 'nupic',
+      'data_set': None,
+      'type': self.prediction_type,
+    }
 
 
 class bcolors(object):
@@ -960,7 +965,7 @@ def parse_options():
   parser = OptionParser(usage)
   df = "{}/input_data.csv".format(MODEL_INPUT_FILES_DIR)
   parser.add_option('-c', "--create", dest="create_input_file", action="store_true", default=False,
-    help="create the input file from data in the database")
+    help="create the input file using data from a Django web-service")
   parser.add_option('-f', "--file", dest="input_filename", default=df,
     help="specify the fully qualified path to a CSV filename to store input data for the model (default = {})".format(df))
   parser.add_option('-s', "--start", dest="start", default=None,
@@ -1094,7 +1099,8 @@ if __name__ == "__main__":
     #################################################################################
     # send the prediction to the Django server
     # TODO: HIGH: return the prediction via stdout using 'print()'
-    print(prediction.to_json())
+    sys.stdout.write(json.dumps(prediction.to_dict()) + '\n')
+    sys.stdout.flush()
 
 
 
