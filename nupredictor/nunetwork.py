@@ -1009,21 +1009,6 @@ if __name__ == "__main__":
   pid = os.getpid()
 
   #################################################################################
-  # # set the 'url'
-  # # if this is a development workstation...
-  # if gethostname() in ['codehammer', 'dev']:
-  #   url = 'http://{}:8000'.format(gethostname())
-  # # if this is a production or test server...
-  # else:
-  #   url = 'http://{}'.format(getfqdn(gethostname()))
-
-  #################################################################################
-  # # get the Bitmex Data Server's hostname, port, and authentication key
-  # services_url = '{}/ws/service'.format(url)
-  # service = get_services(url=services_url, username=username, password=password)
-  # publisher_address = (service['hostname'], service['port'])
-
-  #################################################################################
   # extract variables from the command line options
   django_server = options.server_name
   django_port = options.server_port
@@ -1051,35 +1036,10 @@ if __name__ == "__main__":
   FQ_MODEL_FILENAME = os.path.join(MODEL_OUTPUT_FILES_DIR, MODEL_FILENAME)
   FQ_MODEL_TEMPLATE_FILENAME = os.path.join(MODEL_INPUT_FILES_DIR, "model-one-market-quotes.yaml")
 
-  #################################################################################
-  # # Subscriber client connection
-  # connection = Client(address=publisher_address, authkey=service['authkey'])
-  # subscription_request = {
-  #   'action': 'subscribe',
-  #   'hostname': getfqdn(),
-  #   'pid': os.getpid(),
-  #   'client': connection,
-  #   'smarket': market,
-  #   'topic': options.topic,
-  # }
-  # connection.send(subscription_request)
-  # response = connection.recv()
-  #
-  # if response == SUBSCRIBED:
-  #   # the server accepted our subscription request
-  #   print('Subscription request accepted by the Bitmex Data Server')
-  # elif response == INVALID_REQUEST:
-  #   # the server rejected out subscription request
-  #   msg = 'Subscription request was REJECTED by the Bitmex Data Server'
-  #   print(msg)
-  #   raise Exception(msg)
-
-
   while True:
     #################################################################################
     # wait until we receive a price update from the Bitmex Data Server (Data Manager (DM))
     try:
-      # data = connection.recv()
       # TODO: HIGH: block until the next line is read from stdin
       line = input()
       if line.lower() in ['quit', 'q']:
@@ -1132,8 +1092,7 @@ if __name__ == "__main__":
     modify_output_file_permissions(MODEL_OUTPUT_FILES_DIR)
 
     #################################################################################
-    # # send the prediction to the Django server
-    # store_prediction(url=url, username=username, password=password, action='add', prediction=prediction)
+    # send the prediction to the Django server
     # TODO: HIGH: return the prediction via stdout using 'print()'
     print(prediction.to_json())
 
