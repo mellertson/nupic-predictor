@@ -200,8 +200,9 @@ def create_output_directory(fq_model_template_filename, fq_model_filename, model
   shutil.copymode(src=fq_model_template_filename, dst=fq_model_filename)
 
 
-def fetch_market_data(exchange, markets, data_table, start, end, time_units,
-                      username='mellertson', password='test', host='localhost', port=8000):
+def fetch_market_data(exchange, markets, data_table, start, end, timeframe,
+                      username='mellertson', password='test', host='localhost', port=8000,
+                      protocol='http'):
   """
   Get data from Django web-service
 
@@ -215,8 +216,8 @@ def fetch_market_data(exchange, markets, data_table, start, end, time_units,
   :type start: datetime
   :param end:
   :type end: datetime
-  :param time_units: '1m' | '5m' | '1h' | '1d'
-  :type time_units: str
+  :param timeframe: '1m' | '5m' | '1h' | '1d'
+  :type timeframe: str
   :param username:
   :type username: str
   :param password:
@@ -225,31 +226,34 @@ def fetch_market_data(exchange, markets, data_table, start, end, time_units,
   :type host: str
   :param port:
   :type port: int
+  :param protocol: 'http' | 'https'
+  :type protocol: str
+
   :return: Pandas DataFrames, e.g.: {'BTC/USD': dataframe, 'BTC/M18': dataframe}
   :rtype: dict
   """
 
   # local variables
-  base_url = 'http://{}:{}/bc/data/get'.format(host, port)
+  base_url = '{}://{}:{}/bc/data/get/{}'.format(protocol, host, port, data_table.lower())
   frames = {}
 
   # for each market...
   for market in markets:
     # build the input variables needed by the web-service
-    params1 = {'username': username, 'passwd': password, 'exchange': exchange, 'symbol': market,
-               'data_table': data_table, 'start': start, 'end': end, 'time_units': time_units}
+    params1 = {'username':   username, 'passwd': password, 'exchange': exchange, 'symbol': market,
+               'data_table': data_table, 'start': start, 'end': end, 'timeframe': timeframe}
 
     # send the HTTP request and decode the JSON response
     response = requests.get(base_url, params=params1, timeout=60*60)
     if response.status_code != 200:
       raise ValueError('No {}-{} data was found between {} and {} for {}'
-                       .format(exchange, market, start, end, time_units))
+                       .format(exchange, market, start, end, timeframe))
     data = pd.read_json(response.content, orient='record', precise_float=True)
 
     # verify there is at least 1 row of data in each data set
     if len(data) < 1:
       raise ValueError('No {}-{} data was found between {} and {} for {}'
-                       .format(exchange, market, start, end, time_units))
+                       .format(exchange, market, start, end, timeframe))
 
     frames[market] = data
 
@@ -1079,7 +1083,7 @@ if __name__ == "__main__":
     # the 'model_input_files' directory
     if create_input_file:
       market_data = fetch_market_data(exchange=EXCHANGE, markets=[market],
-                                      data_table=DATA_TABLE, time_units=time_units,
+                                      data_table=DATA_TABLE, timeframe=time_units,
                                       start=start, end=end,
                                       host=django_server, port=django_port)
       initialize_csv(input_filename, [market],

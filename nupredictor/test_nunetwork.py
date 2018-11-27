@@ -173,9 +173,9 @@ class Predictor_Functions(TestCase):
 
     # call the methods under test
     market_data = fetch_market_data(exchange=exchange, markets=markets,
-                                    data_table=DATA_TABLE, time_units=time_unit,
-                                    start=start, end=end,
-                                    host=django_server, port=django_port)
+									data_table=DATA_TABLE, timeframe=time_unit,
+									start=start, end=end,
+									host=django_server, port=django_port)
     initialize_csv(input_filename, markets,
                    include_spread=include_spread, include_classification=include_classification)
     write_input_file(input_filename, markets, market_data, spread_as_pct=True,
