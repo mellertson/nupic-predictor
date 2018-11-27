@@ -47,17 +47,36 @@ __all__ = [
 
 
 class Prediction(object):
-  def __init__(self, time_predicted, exchange, market, time_units,
+  def __init__(self, time_predicted, exchange, market, timeframe,
                prediction_type, prediction, confidence, actual, pct_error):
     self.time_predicted = time_predicted
     self.exchange = exchange
     self.market = market
-    self.time_units = time_units
+    self.timeframe = timeframe
     self.prediction_type = prediction_type
     self.prediction = prediction
     self.confidence = confidence
     self.actual = actual
     self.pct_error = pct_error
+
+  def to_json(self):
+    """
+    Converts the prediction to a json string
+
+    :return:
+    :rtype: str
+    """
+    json.dumps({
+      'time_predicted': self.time_predicted,
+      'exchange': self.exchange,
+      'market': self.market,
+      'timeframe': self.timeframe,
+      'prediction_type': self.prediction_type,
+      'prediction': self.prediction,
+      'confidence': self.confidence,
+      'actual': self.actual,
+      'pct_error': self.pct_error,
+    })
 
 
 class bcolors(object):
@@ -786,7 +805,7 @@ def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename,
           time_predicted=tz_utc.localize(TIMESTAMPS[-1]),
           exchange=EXCHANGE,
           market=market,
-          time_units=time_units,
+          timeframe=time_units,
           prediction_type=prediction_type,
           prediction=prediction,
           confidence=oneStepConfidence * 100,
@@ -824,7 +843,7 @@ def store_prediction(url, username, password, action, prediction):
     time_predicted=prediction.time_predicted,
     exchange=prediction.exchange,
     market=prediction.market,
-    time_units=prediction.time_units,
+    time_units=prediction.timeframe,
     type=prediction.prediction_type,
     prediction=prediction.prediction,
     confidence=prediction.confidence)
@@ -930,7 +949,7 @@ def parse_options():
     '-d' or "--server" - the name of the Django server to get the data from
     '-p' or "--port"   - (default = 80) the port number the Django server is running on
     '-m' or "--markets" - a list of market symbols, delimited by a semicolon
-    '-t' or "--time_units" - the time units, either: "1m", "5m", "1h", "1d"
+    '-t' or "--timeframe" - the time units, either: "1m", "5m", "1h", "1d"
     '-P' or "--predict" - the field name that will be predicted, e.g. "spread" or "m1_ask"
 
   :returns: (options, args)
@@ -954,7 +973,7 @@ def parse_options():
     help="port number the Django server is running on (default = 80)")
   parser.add_option('-m', "--market", dest="market", default="BTC/USD",
     help='a standardized market symbol (default = "BTC/USD")')
-  parser.add_option('-t', "--time_units", dest="time_units", default='1m',
+  parser.add_option('-t', "--timeframe", dest="timeframe", default='1m',
     help='the time units, either: "1m", "5m", "1h", "1d" (default = "1m")')
   parser.add_option('-P', "--predict", dest="predicted_field", default='btcusd_high',
     help="""'-P' or '--predict' - the field name that will be predicted, e.g. 'btcusd_high' | 'btcusd_low' (default = "btcusd_high")""")
@@ -1062,7 +1081,9 @@ if __name__ == "__main__":
     try:
       # data = connection.recv()
       # TODO: HIGH: block until the next line is read from stdin
-
+      line = input()
+      if line.lower() in ['quit', 'q']:
+        exit(0)
     except EOFError:
       exit(1)
 
@@ -1114,6 +1135,7 @@ if __name__ == "__main__":
     # # send the prediction to the Django server
     # store_prediction(url=url, username=username, password=password, action='add', prediction=prediction)
     # TODO: HIGH: return the prediction via stdout using 'print()'
+    print(prediction.to_json())
 
 
 

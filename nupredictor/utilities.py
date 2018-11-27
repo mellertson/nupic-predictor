@@ -9,7 +9,7 @@ def parse_time_units(time_units):
 	:param time_units: Choices are: '1m' | '5m' | '1h' | '1d'
 	:type time_units: str
 
-	:return: A timedelta equivilent to the 'time_units' argument
+	:return: A timedelta equivilent to the 'timeframe' argument
 	:rtype: timedelta
 	"""
 
@@ -27,7 +27,7 @@ def parse_time_units(time_units):
 		elif units == 'd':
 			return timedelta(days=value * RECORD_COUNT)
 		else:
-			raise ValueError('Invalid "time_units" parameter: {}'.format(time_units))
+			raise ValueError('Invalid "timeframe" parameter: {}'.format(time_units))
 
 def local_timezone():
 	"""
