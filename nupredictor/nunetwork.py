@@ -44,6 +44,9 @@ __all__ = [
   'modify_output_file_permissions',
   'write_input_file',
   'get_services',
+  'createNetwork',
+  'configureNetwork',
+  'getPredictionResults',
 ]
 
 
@@ -258,14 +261,15 @@ def fetch_market_data(exchange, markets, data_table, start, end, timeframe,
   """
 
   # local variables
-  base_url = '{}://{}:{}/bc/data/get/{}'.format(protocol, host, port, data_table.lower())
+  base_url = '{}://{}:{}/data/get/{}'.format(protocol, host, port, data_table.lower())
   frames = {}
 
   # for each market...
   for market in markets:
     # build the input variables needed by the web-service
     params1 = {'username':   username, 'passwd': password, 'exchange': exchange, 'symbol': market,
-               'data_table': data_table, 'start': start, 'end': end, 'timeframe': timeframe}
+               'data_table': data_table, 'start': start.isoformat(), 'end': end.isoformat(),
+               'timeframe': timeframe}
 
     # send the HTTP request and decode the JSON response
     response = requests.get(base_url, params=params1, timeout=60*60)
@@ -531,7 +535,7 @@ def createNetwork(dataSource, fq_model_filename):
   :param fq_model_filename: The fully qualified Nupic model filename
   :type fq_model_filename: str
   :returns: A fully initialized Nupic model (a.k.a. Network)
-  :rtype: Network
+  :rtype: nupic.engine.Network
   """
   with open(fq_model_filename, "r") as f:
     modelParams = yaml.safe_load(f)["modelParams"]
@@ -650,6 +654,29 @@ def configureNetwork(network, predicted_field):
   network.regions["SP"].setParameter("inferenceMode", 1)
   network.regions["TM"].setParameter("inferenceMode", 1)
   network.regions["classifier"].setParameter("inferenceMode", 1)
+
+
+def build_model(fq_input_filename, fq_model_filename, predicted_field):
+  """
+  Build and initialize a Nupic network (model)
+
+  :param fq_input_filename: The fully qualified path to the Nupic formatted input file name
+  :type fq_input_filename: str
+  :param fq_model_filename: The fully qualified path to the Nupic model parameters (in YAML format)
+  :type fq_model_filename: str
+  :param predicted_field: The "fieldname", identified in the model parameters file, which will be predicted, e.g. "spread" or "m1_ask"
+  :type predicted_field: str
+
+  :rtype: Prediction
+  """
+
+  # Create a data source for the network.
+  dataSource = FileRecordStream(streamID=fq_input_filename)
+  network = createNetwork(dataSource=dataSource, fq_model_filename=fq_model_filename)
+
+  # Configure the network according to the model parameters
+  configureNetwork(network=network, predicted_field=predicted_field)
+  return network
 
 
 def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename, predicted_field,
@@ -892,10 +919,10 @@ global MODEL_OUTPUT_FILES_DIR, FQ_RESULTS_FILENAME, FQ_MODEL_FILENAME, FQ_MODEL_
 
 # Input variables into the system
 MAGIC_N = 400
-EXCHANGE = 'bitmex'
+EXCHANGE = 'hitbtc2'
 NMARKET = 'XBTM18'.lower()
 MARKET2 = 'XBTUSD'.lower()
-DATA_TABLE = 'trade'
+DATA_TABLE = 'ohlcv'
 CURRENT_DATE_TIME = datetime.now().strftime("%Y.%m.%d.%H.%M").lower()
 CURRENT_DATE = datetime.now().strftime("%Y.%m.%d").lower()
 # CANDLESTICK_SIZE = '1h' # 1m = 1 minute, 5m = 5 minutes
@@ -976,6 +1003,8 @@ def parse_options():
     help="""the name of the Django server to get the data from (default = "codehammer")""")
   parser.add_option('-p', "--port", dest="server_port", default="80",
     help="port number the Django server is running on (default = 80)")
+  parser.add_option('-x', '--exchange', dest='exchange', default='hitbtc2',
+    help='the exchange ID, e.g. "hitbtc2" or "bittrex".')
   parser.add_option('-m', "--market", dest="market", default="BTC/USD",
     help='a standardized market symbol (default = "BTC/USD")')
   parser.add_option('-t', "--timeframe", dest="timeframe", default='1m',
@@ -997,7 +1026,7 @@ def parse_options():
 
   # set default end date
   if options.start is None:
-    td = parse_time_units(options.time_units)
+    td = parse_time_units(options.timeframe)
     start = options.end - td
     options.start = start
   return options, args
@@ -1017,8 +1046,9 @@ if __name__ == "__main__":
   # extract variables from the command line options
   django_server = options.server_name
   django_port = options.server_port
+  EXCHANGE = options.exchange
   market = options.market
-  time_units = options.time_units
+  time_units = options.timeframe
   predicted_field = options.predicted_field
   include_spread = True
   include_classification = False
@@ -1046,12 +1076,13 @@ if __name__ == "__main__":
     # wait until we receive a price update from the Bitmex Data Server (Data Manager (DM))
     try:
       # TODO: HIGH: block until the next line is read from stdin
-      line = input()
+      line = sys.stdin.readline()
       if line.lower() in ['quit', 'q']:
         exit(0)
     except EOFError:
       exit(1)
 
+    #################################################################################
     # re-caclulate the start and end dates for the input data file
     start = get_start_end_dates(time_units=time_units)['start']
     end = get_start_end_dates(time_units=time_units)['end']
@@ -1077,6 +1108,7 @@ if __name__ == "__main__":
       write_input_file(input_filename, [market], market_data, spread_as_pct=True,
                        include_spread=include_spread, include_classification=include_classification)
 
+    #################################################################################
     # read the input data file into local variables, so the
     # nupic predictor can use them to make its predictions
     if file_exists(input_filename):
@@ -1087,18 +1119,22 @@ if __name__ == "__main__":
     #################################################################################
     # run the Nupic predictor, make the predictions, and
     # save the results to the 'model_output_files' directory
-    prediction = run_the_predictor(fq_input_filename=input_filename,
-                      fq_model_filename=FQ_MODEL_FILENAME,
-                      fq_results_filename=FQ_RESULTS_FILENAME,
-                      predicted_field=predicted_field, market=market, prediction_type='H', time_units=time_units)
+    prediction = run_the_predictor(
+      fq_input_filename=input_filename,
+      fq_model_filename=FQ_MODEL_FILENAME,
+      fq_results_filename=FQ_RESULTS_FILENAME,
+      predicted_field=predicted_field,
+      market=market,
+      prediction_type='H',
+      time_units=time_units)
 
+    #################################################################################
     # modify the permissions of the files in the output directory
     # so that everyone can read them
     modify_output_file_permissions(MODEL_OUTPUT_FILES_DIR)
 
     #################################################################################
-    # send the prediction to the Django server
-    # TODO: HIGH: return the prediction via stdout using 'print()'
+    # return the prediction via stdout
     sys.stdout.write(json.dumps(prediction.to_dict()) + '\n')
     sys.stdout.flush()
 

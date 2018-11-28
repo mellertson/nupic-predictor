@@ -2,9 +2,11 @@ from unittest import TestCase, skip
 import re
 from datetime import datetime, timedelta
 import os
-from .nunetwork import *
-from .functions import get_files
+import numpy as np
+from nupredictor.nunetwork import *
+from nupredictor.functions import get_files
 from socket import gethostname, getfqdn
+from nupic.data.file_record_stream import FileRecordStream
 
 
 def heading(msg):
@@ -234,6 +236,47 @@ class Predictor_Functions(TestCase):
     self.assertIn('authkey', aO)
     eO.update({'authkey': aO['authkey']})
     self.assertDictEqual(eO, aO)
+
+  # test: FileRecordStream()
+
+  def build_input_record(self, fields, values):
+    r = {}
+    for i in range(len(fields)):
+      r[fields[i]] = values[i]
+    return r
+
+  def test_file_record_stream_with_stdin(self):
+    # setup
+    MODEL_FILE = 'nupic_network_model.yaml'
+    CSV_FILE = 'nupic_network_input_data.csv'
+    predicted_field = 'btcusd_open'
+    with open('/tmp/nupic_buff.csv', 'w') as buf:
+      with open(CSV_FILE, 'r') as csv_file:
+        # setup: write header row to nupic data source
+        buf.write(csv_file.readline())
+        buf.flush()
+        buf.write(csv_file.readline())
+        buf.flush()
+        buf.write(csv_file.readline())
+        buf.flush()
+
+        # setup: initialize the Nupic network
+        f = FileRecordStream('/tmp/nupic_buff.csv')
+        network = createNetwork(f, MODEL_FILE)
+        configureNetwork(network, predicted_field)
+
+        # test: run 5 records through the model
+        last_p = None
+        for i in range(5):
+          buf.write(csv_file.readline())
+          buf.flush()
+          network.run(1)
+          classifierResults = getPredictionResults(network, "classifier")
+          p = classifierResults[1]["predictedValue"]
+          self.assertIsInstance(p, np.float32)
+          self.assertIsInstance(classifierResults, dict)
+          self.assertNotEqual(p, last_p)
+          last_p = p
 
 
 class Modify_Output_File(TestCase):
