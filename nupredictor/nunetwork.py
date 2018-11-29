@@ -8,6 +8,7 @@ import requests
 import pandas as pd
 import pytz
 import logging
+import traceback
 from dateutil import parser, tz
 from datetime import datetime, timedelta
 from nupic.engine import Network
@@ -44,7 +45,20 @@ __all__ = [
 	'NupicPredictor',
 ]
 
-import csv, codecs, cStringIO
+
+def error_log_stack(e):
+	"""
+	Outputs the curret stack trace and the exception's text to the root error logger
+
+	:param e:
+	:type e: Exception
+	"""
+
+	ss = traceback.extract_tb(sys.exc_info()[2])
+	stack = traceback.format_list(ss)
+	sys.stderr.writelines(stack)
+	sys.stderr.writelines([''])
+	sys.stderr.writelines(['Exception: {}'.format(e)])
 
 
 class DateTimeUtils(object):
@@ -769,6 +783,12 @@ class NupicPredictor(Thread):
 		if not self.input_file.closed:
 			self.input_file.close()
 
+	def __str__(self):
+		return self.name
+
+	def __repr__(self):
+		return self.__str__()
+
 	def build_dir(self, filename):
 		return os.path.join(self.dir, filename)
 
@@ -912,10 +932,10 @@ class NupicPredictor(Thread):
 			self.input_file.close()
 			raise e
 		except StopIteration as e:
-			sys.stderr.writelines('{}: {}'.format(type(e), e))
+			error_log_stack(e)
 			raise e
 		except Exception as e:
-			sys.stderr.writelines('{}: {}'.format(type(e), e))
+			error_log_stack(e)
 			raise e
 
 	def predictor_thread(self):
@@ -935,6 +955,8 @@ class NupicPredictor(Thread):
 				if data['data'].lower() == 'quit':
 					exit(0)
 			elif data['description'] == 'trade':
+				self.input_file.write(data['data'])
+				self.input_file.flush()
 				p = self.get_next_prediction(network, data)
 				self.output_prediction(p)
 			elif data['description'] == 'raw':

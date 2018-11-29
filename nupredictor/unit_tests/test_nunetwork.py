@@ -287,9 +287,6 @@ class Predictor_Functions(TestCase):
 
   def test_run____using_tmp_buf_file(self):
     # setup
-    row1 = '''timestamp, btcusd_open, btcusd_high, btcusd_low, btcusd_close, btcusd_volume, btcusd_lastSize'''
-    row2 = '''datetime, float, float, float, float, float, float'''
-    row3 = '''T,  ,  ,  ,  ,  ,  '''
     cwd = os.path.dirname(os.path.abspath(__file__))
     MODEL_FILE = os.path.join(cwd, 'nupic_network_model.yaml')
     CSV_FILE = os.path.join(cwd, 'nupic_network_input_data.csv')
