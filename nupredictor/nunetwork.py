@@ -306,7 +306,8 @@ def fetch_market_data(exchange, markets, data_table, start, end, timeframe,
   return frames
 
 
-def initialize_csv(fq_input_filename, markets, include_spread=True, include_classification=False):
+def initialize_csv(fq_input_filename, markets,
+                   include_spread=True, include_classification=False):
   """
   Creates the input filename, initializing its top three rows in the Nupic file format
 
@@ -667,7 +668,7 @@ def build_model(fq_input_filename, fq_model_filename, predicted_field):
   :param predicted_field: The "fieldname", identified in the model parameters file, which will be predicted, e.g. "spread" or "m1_ask"
   :type predicted_field: str
 
-  :rtype: Prediction
+  :rtype: nupic.engine.Network
   """
 
   # Create a data source for the network.
@@ -679,7 +680,8 @@ def build_model(fq_input_filename, fq_model_filename, predicted_field):
   return network
 
 
-def run_the_predictor(fq_input_filename, fq_model_filename, fq_results_filename, predicted_field,
+def run_the_predictor(fq_input_filename, fq_model_filename,
+                      fq_results_filename, predicted_field,
                       market, prediction_type, time_units):
   """
   run the Nupic predictor, save the results to the 'model_output_files' directory
@@ -914,52 +916,52 @@ def get_services(url, username, password):
   raise Exception('Service was not returned by the Django server')
 
 
-global EXPERIMENT_NAME, INPUT_FILENAME, RESULTS_FILENAME, MODEL_FILENAME, BASE_DIR, MODEL_INPUT_FILES_DIR
-global MODEL_OUTPUT_FILES_DIR, FQ_RESULTS_FILENAME, FQ_MODEL_FILENAME, FQ_MODEL_TEMPLATE_FILENAME, DATA_TABLE, MAGIC_N
-
-# Input variables into the system
-MAGIC_N = 400
-EXCHANGE = 'hitbtc2'
-NMARKET = 'XBTM18'.lower()
-MARKET2 = 'XBTUSD'.lower()
-DATA_TABLE = 'ohlcv'
-CURRENT_DATE_TIME = datetime.now().strftime("%Y.%m.%d.%H.%M").lower()
-CURRENT_DATE = datetime.now().strftime("%Y.%m.%d").lower()
-# CANDLESTICK_SIZE = '1h' # 1m = 1 minute, 5m = 5 minutes
-START_DATE = datetime(2015, 10, 1, tzinfo=pytz.utc)
-END_DATE = datetime(2018, 4, 1, tzinfo=pytz.utc)
-DATA_POINTS = int((END_DATE - START_DATE).total_seconds() / 60 / 5) + 1
-
-# INPUT and OUTPUT file names
-EXPERIMENT_NAME = '{}.{}.{}.{}.{}'.format(CURRENT_DATE_TIME, EXCHANGE, NMARKET, DATA_TABLE, '')
-INPUT_FILENAME = '{}.{}.{}.csv'.format(EXCHANGE, NMARKET, DATA_TABLE)
-RESULTS_FILENAME = '{}.results.csv'.format(EXPERIMENT_NAME)
-MODEL_FILENAME = '{}.model.yaml'.format(EXPERIMENT_NAME)
-
-# INPUT and OUTPUT directory names
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_INPUT_FILES_DIR = os.path.join(BASE_DIR, 'model_input_files')
-MODEL_OUTPUT_FILES_DIR = os.path.join(BASE_DIR, 'model_output_files/{}'.format(CURRENT_DATE))
-# FQ_INPUT_FILENAME = os.path.join(MODEL_INPUT_FILES_DIR, INPUT_FILENAME)
-FQ_RESULTS_FILENAME = os.path.join(MODEL_OUTPUT_FILES_DIR, RESULTS_FILENAME)
-FQ_MODEL_FILENAME = os.path.join(MODEL_OUTPUT_FILES_DIR, MODEL_FILENAME)
-FQ_MODEL_TEMPLATE_FILENAME = os.path.join(MODEL_INPUT_FILES_DIR, "model-one-market-quotes.yaml")
-
-# Output variables
-ACTUALS = []
-TIMESTAMPS = []
-
-# unicode characters
-UP_CHAR = unichr(8593).encode('utf-8')
-DOWN_CHAR = unichr(8595).encode('utf-8')
-RIGHT_CHAR = unichr(10003).encode('utf-8')
-WRONG_CHAR = unichr(215).encode('utf-8')
-
-# colored messages   BOLD = '\033[1m'    '\033[94m'      8593
-UP = '{}{}{} Bigger {}'.format(bcolors.BOLD, bcolors.OKBLUE, UP_CHAR, bcolors.ENDC)
-DOWN = '{}{}{} Smaller{}'.format(bcolors.BOLD, bcolors.FAIL, DOWN_CHAR, bcolors.ENDC)
-RIGHT = '{}{}{} Right {}'.format(bcolors.BOLD, bcolors.OKBLUE, RIGHT_CHAR, bcolors.ENDC)
-WRONG = '{}{}{} Wrong {}'.format(bcolors.BOLD, bcolors.FAIL, WRONG_CHAR, bcolors.ENDC)
+# global EXPERIMENT_NAME, INPUT_FILENAME, RESULTS_FILENAME, MODEL_FILENAME, BASE_DIR, MODEL_INPUT_FILES_DIR
+# global MODEL_OUTPUT_FILES_DIR, FQ_RESULTS_FILENAME, FQ_MODEL_FILENAME, FQ_MODEL_TEMPLATE_FILENAME, DATA_TABLE, MAGIC_N
+#
+# # Input variables into the system
+# MAGIC_N = 400
+# EXCHANGE = 'hitbtc2'
+# NMARKET = 'XBTM18'.lower()
+# MARKET2 = 'XBTUSD'.lower()
+# DATA_TABLE = 'ohlcv'
+# CURRENT_DATE_TIME = datetime.now().strftime("%Y.%m.%d.%H.%M").lower()
+# CURRENT_DATE = datetime.now().strftime("%Y.%m.%d").lower()
+# # CANDLESTICK_SIZE = '1h' # 1m = 1 minute, 5m = 5 minutes
+# START_DATE = datetime(2015, 10, 1, tzinfo=pytz.utc)
+# END_DATE = datetime(2018, 4, 1, tzinfo=pytz.utc)
+# DATA_POINTS = int((END_DATE - START_DATE).total_seconds() / 60 / 5) + 1
+#
+# # INPUT and OUTPUT file names
+# EXPERIMENT_NAME = '{}.{}.{}.{}.{}'.format(CURRENT_DATE_TIME, EXCHANGE, NMARKET, DATA_TABLE, '')
+# INPUT_FILENAME = '{}.{}.{}.csv'.format(EXCHANGE, NMARKET, DATA_TABLE)
+# RESULTS_FILENAME = '{}.results.csv'.format(EXPERIMENT_NAME)
+# MODEL_FILENAME = '{}.model.yaml'.format(EXPERIMENT_NAME)
+#
+# # INPUT and OUTPUT directory names
+# BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# MODEL_INPUT_FILES_DIR = os.path.join(BASE_DIR, 'model_input_files')
+# MODEL_OUTPUT_FILES_DIR = os.path.join(BASE_DIR, 'model_output_files/{}'.format(CURRENT_DATE))
+# # FQ_INPUT_FILENAME = os.path.join(MODEL_INPUT_FILES_DIR, INPUT_FILENAME)
+# FQ_RESULTS_FILENAME = os.path.join(MODEL_OUTPUT_FILES_DIR, RESULTS_FILENAME)
+# FQ_MODEL_FILENAME = os.path.join(MODEL_OUTPUT_FILES_DIR, MODEL_FILENAME)
+# FQ_MODEL_TEMPLATE_FILENAME = os.path.join(MODEL_INPUT_FILES_DIR, "model-one-market-quotes.yaml")
+#
+# # Output variables
+# ACTUALS = []
+# TIMESTAMPS = []
+#
+# # unicode characters
+# UP_CHAR = unichr(8593).encode('utf-8')
+# DOWN_CHAR = unichr(8595).encode('utf-8')
+# RIGHT_CHAR = unichr(10003).encode('utf-8')
+# WRONG_CHAR = unichr(215).encode('utf-8')
+#
+# # colored messages   BOLD = '\033[1m'    '\033[94m'      8593
+# UP = '{}{}{} Bigger {}'.format(bcolors.BOLD, bcolors.OKBLUE, UP_CHAR, bcolors.ENDC)
+# DOWN = '{}{}{} Smaller{}'.format(bcolors.BOLD, bcolors.FAIL, DOWN_CHAR, bcolors.ENDC)
+# RIGHT = '{}{}{} Right {}'.format(bcolors.BOLD, bcolors.OKBLUE, RIGHT_CHAR, bcolors.ENDC)
+# WRONG = '{}{}{} Wrong {}'.format(bcolors.BOLD, bcolors.FAIL, WRONG_CHAR, bcolors.ENDC)
 
 
 def get_start_end_dates(time_units):
@@ -1032,6 +1034,12 @@ def parse_options():
   return options, args
 
 
+class NupicPredictor(object):
+
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+
+
 if __name__ == "__main__":
 
   options, args = parse_options()
@@ -1075,46 +1083,48 @@ if __name__ == "__main__":
     #################################################################################
     # wait until we receive a price update from the Bitmex Data Server (Data Manager (DM))
     try:
-      # TODO: HIGH: block until the next line is read from stdin
-      line = sys.stdin.readline()
-      if line.lower() in ['quit', 'q']:
-        exit(0)
+      # block until the next trade or command is recieved
+      json_data = sys.stdin.readline()
+      data = json.loads(json_data)
+      if data['description'] == 'command':
+        if data['data'].lower() == 'quit':
+          exit(0)
+      elif data['description'] == 'trade':
+        trade = data['data']
     except EOFError:
       exit(1)
 
-    #################################################################################
-    # re-caclulate the start and end dates for the input data file
-    start = get_start_end_dates(time_units=time_units)['start']
-    end = get_start_end_dates(time_units=time_units)['end']
+    # #################################################################################
+    # # create the 'model_output_files' directory and copy the model template
+    # # file into the 'model_output_files' directory and rename it
+    # create_output_directory(fq_model_template_filename=FQ_MODEL_TEMPLATE_FILENAME,
+    #                         fq_model_filename=FQ_MODEL_FILENAME,
+    #                         model_output_files_dir=MODEL_OUTPUT_FILES_DIR)
 
-    #################################################################################
-    # create the 'model_output_files' directory and copy the model template
-    # file into the 'model_output_files' directory and rename it
-    create_output_directory(fq_model_template_filename=FQ_MODEL_TEMPLATE_FILENAME,
-                            fq_model_filename=FQ_MODEL_FILENAME,
-                            model_output_files_dir=MODEL_OUTPUT_FILES_DIR)
+    # #################################################################################
+    # # if the input data file does not exist, get the data from
+    # # the Django server and cache it in a local CSV file in
+    # # the 'model_input_files' directory
+    # if create_input_file:
+    #   market_data = fetch_market_data(exchange=EXCHANGE, markets=[market],
+    #                                   data_table=DATA_TABLE, timeframe=time_units,
+    #                                   start=start, end=end,
+    #                                   host=django_server, port=django_port)
+    #   initialize_csv(input_filename, [market],
+    #     include_spread=include_spread,
+    #     include_classification=include_classification)
+    #   write_input_file(input_filename, [market], market_data,
+    #     spread_as_pct=True,
+    #     include_spread=include_spread,
+    #     include_classification=include_classification)
 
-    #################################################################################
-    # if the input data file does not exist, get the data from
-    # the Django server and cache it in a local CSV file in
-    # the 'model_input_files' directory
-    if create_input_file:
-      market_data = fetch_market_data(exchange=EXCHANGE, markets=[market],
-                                      data_table=DATA_TABLE, timeframe=time_units,
-                                      start=start, end=end,
-                                      host=django_server, port=django_port)
-      initialize_csv(input_filename, [market],
-                     include_spread=include_spread, include_classification=include_classification)
-      write_input_file(input_filename, [market], market_data, spread_as_pct=True,
-                       include_spread=include_spread, include_classification=include_classification)
-
-    #################################################################################
-    # read the input data file into local variables, so the
-    # nupic predictor can use them to make its predictions
-    if file_exists(input_filename):
-      read_input_file(fq_input_filename=input_filename)
-    else:
-      raise ValueError("Filename '{}' does not exist".format(input_filename))
+    # #################################################################################
+    # # read the input data file into local variables, so the
+    # # nupic predictor can use them to make its predictions
+    # if file_exists(input_filename):
+    #   read_input_file(fq_input_filename=input_filename)
+    # else:
+    #   raise ValueError("Filename '{}' does not exist".format(input_filename))
 
     #################################################################################
     # run the Nupic predictor, make the predictions, and
@@ -1128,10 +1138,10 @@ if __name__ == "__main__":
       prediction_type='H',
       time_units=time_units)
 
-    #################################################################################
-    # modify the permissions of the files in the output directory
-    # so that everyone can read them
-    modify_output_file_permissions(MODEL_OUTPUT_FILES_DIR)
+    # #################################################################################
+    # # modify the permissions of the files in the output directory
+    # # so that everyone can read them
+    # modify_output_file_permissions(MODEL_OUTPUT_FILES_DIR)
 
     #################################################################################
     # return the prediction via stdout

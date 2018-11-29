@@ -245,12 +245,14 @@ class Predictor_Functions(TestCase):
       r[fields[i]] = values[i]
     return r
 
-  def test_file_record_stream_with_stdin(self):
+  def test_file_record_stream____using_tmp_buf_file(self):
     # setup
-    MODEL_FILE = 'nupic_network_model.yaml'
-    CSV_FILE = 'nupic_network_input_data.csv'
+    cwd = os.path.dirname(os.path.abspath(__file__))
+    MODEL_FILE = os.path.join(cwd, 'nupic_network_model.yaml')
+    CSV_FILE = os.path.join(cwd, 'nupic_network_input_data.csv')
+    BUF_FILE = '/tmp/nupic_buff.csv'
     predicted_field = 'btcusd_open'
-    with open('/tmp/nupic_buff.csv', 'w') as buf:
+    with open(BUF_FILE, 'w') as buf:
       with open(CSV_FILE, 'r') as csv_file:
         # setup: write header row to nupic data source
         buf.write(csv_file.readline())
@@ -261,7 +263,7 @@ class Predictor_Functions(TestCase):
         buf.flush()
 
         # setup: initialize the Nupic network
-        f = FileRecordStream('/tmp/nupic_buff.csv')
+        f = FileRecordStream(BUF_FILE)
         network = createNetwork(f, MODEL_FILE)
         configureNetwork(network, predicted_field)
 
@@ -283,7 +285,7 @@ class Modify_Output_File(TestCase):
   """ Test the modify_output_file_permissions function """
 
   def setUp(self):
-    directory = os.path.dirname(os.path.realpath(__file__))
+    directory = os.path.dirname(os.path.abspath(__file__))
     self.directory = os.path.join(directory, 'test_files')
     self.cmd = 'chmod 644 {}/*.txt'.format(self.directory)
     os.system(self.cmd)
