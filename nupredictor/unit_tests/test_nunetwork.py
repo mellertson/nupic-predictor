@@ -15,7 +15,7 @@ def heading(msg):
 
 
 class Predictor_Functions(TestCase):
-  
+
   def setUp(self):
     self.start = datetime(2018, 1, 1)
     self.end = self.start + timedelta(days=30)
@@ -156,7 +156,7 @@ class Predictor_Functions(TestCase):
   def test_write_input_file___with_1d_time_units(self):
     # globals
     global INPUT_FILENAME, DATA_TABLE
-    
+
     # inputs
     exchange = 'bitmex'
     markets = ['BTC/USD']
@@ -175,9 +175,9 @@ class Predictor_Functions(TestCase):
 
     # call the methods under test
     market_data = fetch_market_data(exchange=exchange, markets=markets,
-									data_table=DATA_TABLE, timeframe=time_unit,
-									start=start, end=end,
-									host=django_server, port=django_port)
+                                    data_table=DATA_TABLE, timeframe=time_unit,
+                                    start=start, end=end,
+                                    host=django_server, port=django_port)
     initialize_csv(input_filename, markets,
                    include_spread=include_spread, include_classification=include_classification)
     write_input_file(input_filename, markets, market_data, spread_as_pct=True,
@@ -250,8 +250,10 @@ class Predictor_Functions(TestCase):
     cwd = os.path.dirname(os.path.abspath(__file__))
     MODEL_FILE = os.path.join(cwd, 'nupic_network_model.yaml')
     CSV_FILE = os.path.join(cwd, 'nupic_network_input_data.csv')
-    BUF_FILE = '/tmp/nupic_buff.csv'
-    predicted_field = 'btcusd_open'
+    nupic = NupicPredictor(topic='trade', exchange='hitbtc2',
+      market='BTC/USDT', predicted_field='btcusd_open', timeframe='1m',
+      magic_number=400, model_filename=MODEL_FILE)
+    BUF_FILE = nupic.input_filename
     with open(BUF_FILE, 'w') as buf:
       with open(CSV_FILE, 'r') as csv_file:
         # setup: write header row to nupic data source
@@ -263,9 +265,9 @@ class Predictor_Functions(TestCase):
         buf.flush()
 
         # setup: initialize the Nupic network
-        f = FileRecordStream(BUF_FILE)
-        network = createNetwork(f, MODEL_FILE)
-        configureNetwork(network, predicted_field)
+        data_source = FileRecordStream(BUF_FILE)
+        network = nupic.create_network(data_source)
+        nupic.configure_network(network)
 
         # test: run 5 records through the model
         last_p = None
@@ -307,7 +309,7 @@ class Modify_Output_File(TestCase):
       other_perms = get_file_permissions(fq_filename=fq_file)[2]
 
       self.assertGreaterEqual(int(other_perms), 6,
-        'Expected "other permissions" to be at least read/write, but got {}'.format(other_perms))
+                              'Expected "other permissions" to be at least read/write, but got {}'.format(other_perms))
       all_files[file] = True
 
     # verify all lines in this test case ran
