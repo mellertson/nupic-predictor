@@ -1,8 +1,9 @@
 from unittest import TestCase, skip
-import re
+import re, os, json, sys, subprocess as sp
 from datetime import datetime, timedelta
-import os
+from time import sleep
 import numpy as np
+from dateutil import parser
 from nupredictor.nunetwork import *
 from nupredictor.functions import get_files
 from socket import gethostname, getfqdn
@@ -281,6 +282,71 @@ class Predictor_Functions(TestCase):
           self.assertIsInstance(classifierResults, dict)
           self.assertNotEqual(p, last_p)
           last_p = p
+
+  # test: run()
+
+  def test_run____using_tmp_buf_file(self):
+    # setup
+    row1 = '''timestamp, btcusd_open, btcusd_high, btcusd_low, btcusd_close, btcusd_volume, btcusd_lastSize'''
+    row2 = '''datetime, float, float, float, float, float, float'''
+    row3 = '''T,  ,  ,  ,  ,  ,  '''
+    cwd = os.path.dirname(os.path.abspath(__file__))
+    MODEL_FILE = os.path.join(cwd, 'nupic_network_model.yaml')
+    CSV_FILE = os.path.join(cwd, 'nupic_network_input_data.csv')
+    os.environ['CODE_HOME'] = '/opt'
+    self.cmd_line = [
+      '/opt/python_envs/nupic/bin/python',
+      os.path.join(os.environ['CODE_HOME'],
+                   'spread-predictor/nupredictor/nunetwork.py'),
+      '--topic', 'trade',
+      '--exchange', 'hitbtc2',
+      '--market', 'BTC/USDT',
+      '--timeframe', '1m',
+      '--predicted-field', 'btcusd_open',
+      '--model', MODEL_FILE,
+    ]
+    nupic = sp.Popen(self.cmd_line, stdin=sp.PIPE, stdout=sp.PIPE,
+      stderr=sp.PIPE)
+    with open(CSV_FILE, 'r') as csv_file:
+      nupic.stdin.write(json.dumps({'header_row': csv_file.readline()}))
+      nupic.stdin.write('\n')
+      nupic.stdin.flush()
+      nupic.stdin.write(json.dumps({'header_row': csv_file.readline()}))
+      nupic.stdin.write('\n')
+      nupic.stdin.flush()
+      nupic.stdin.write(json.dumps({'header_row': csv_file.readline()}))
+      nupic.stdin.write('\n')
+      nupic.stdin.flush()
+      for i in range(5):
+        line = csv_file.readline()
+        nupic.stdin.write(json.dumps({'description': 'raw', 'data': line}))
+        nupic.stdin.write('\n')
+        nupic.stdin.flush()
+        try:
+          line = nupic.stdout.readline()
+          p = json.loads(line)
+          self.assertIsInstance(p, dict)
+          self.assertIsInstance(parser.parse(p['predicted_time']), datetime)
+          self.assertEqual(p['market_id'], 'hitbtc2-BTC/USDT')
+          self.assertEqual(p['timeframe'], '1m')
+          self.assertIsInstance(p['value'], float)
+          self.assertEqual(str(p['value_str']), str(p['value']))
+          self.assertIsInstance(p['confidence'], float)
+          self.assertEqual(p['data_type'], 'float')
+          self.assertEqual(p['predictor'], 'nupic')
+          self.assertEqual(p['type'], 'F')
+          print('Prediction received: {}'.format(p))
+        except ValueError as e:
+          nupic.kill()
+          lines = nupic.stderr.readlines()
+          if len(lines) <= 0:
+            lines = ''
+          msg = '{} {}'.format(lines, str(e))
+          self.assertTrue(False, msg)
+
+      nupic.stdin.write(json.dumps({'description': 'command', 'data': 'quit'}))
+      nupic.stdin.write('\n')
+      nupic.stdin.flush()
 
 
 class Modify_Output_File(TestCase):

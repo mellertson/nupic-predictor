@@ -7,6 +7,7 @@ import yaml
 import requests
 import pandas as pd
 import pytz
+import logging
 from dateutil import parser, tz
 from datetime import datetime, timedelta
 from nupic.engine import Network
@@ -17,6 +18,7 @@ from nupredictor.functions import get_files
 from nupredictor.utilities import parse_time_units
 from random import randint
 from socket import getfqdn, gethostname
+from threading import Thread
 
 
 SUBSCRIBED = 1
@@ -41,6 +43,8 @@ __all__ = [
 	'DateTimeUtils',
 	'NupicPredictor',
 ]
+
+import csv, codecs, cStringIO
 
 
 class DateTimeUtils(object):
@@ -706,7 +710,7 @@ def get_start_end_dates(time_units):
 	return { 'start':start, 'end':end }
 
 
-class NupicPredictor(object):
+class NupicPredictor(Thread):
 	"""
 	A predictor which constructs and uses a Nupic model
 
@@ -717,8 +721,11 @@ class NupicPredictor(object):
 	"""
 
 	def __init__(self, topic=None, exchange=None, market=None,
-				 predicted_field=None, timeframe=None, magic_number=None,
-				 parse_args=False, model_filename=None):
+				 predicted_field=None, timeframe=None,
+				 parse_args=False, model_filename=None,
+				 input_stream=sys.stdin, output_stream=sys.stdout):
+		super(NupicPredictor, self).__init__(
+			target=self.run, name='NupicPredictor.run')
 		if parse_args:
 			self.options = self.parse_options()[0]
 		else:
@@ -728,10 +735,10 @@ class NupicPredictor(object):
 			self.options.market = market
 			self.options.predicted_field = predicted_field
 			self.options.timeframe = timeframe
-			self.options.magic_number = magic_number
+			self.options.model = model_filename
 		self.models_dir = 'model_input_files'
-		if model_filename:
-			self.model_filename = model_filename
+		if self.options.model:
+			self.model_filename = self.options.model
 		else:
 			self.model_filename = 'nupic_predict_buys_sells_model.yaml'
 		self.dir = os.path.join(
@@ -741,20 +748,22 @@ class NupicPredictor(object):
 		self.results_fqfn = self.build_dir('results.csv')
 		self.topic = self.options.topic
 		self.exchange_id = self.options.exchange
-		self.symbol = self.options.market.replace('/', '')
+		self.symbol = self.options.market
+		self.symbol_fixed = self.options.market.replace('/', '')
 		self.predicted_field = self.options.predicted_field
 		self.timeframe = self.options.timeframe
 		self.timeframe_td = DateTimeUtils.string_to_timeframe(self.timeframe)
-		self.magic_number = self.options.magic_number
 		self.name = '{}-{}-{}-{}-{}'.format(
 			self.topic,
 			self.exchange_id,
-			self.symbol,
+			self.symbol_fixed,
 			self.predicted_field,
 			self.timeframe)
 		self.input_filename = '/tmp/{}-{}.csv'.format(
 			randint(1, 999999999), self.name)
 		self.input_file = open(self.input_filename, 'w+')
+		self.input_stream = input_stream
+		self.output_stream = output_stream
 
 	def __del__(self):
 		if not self.input_file.closed:
@@ -773,21 +782,24 @@ class NupicPredictor(object):
 
 		usage = "usage: $prog [options]"
 		parser = OptionParser(usage)
-		parser.add_option('-x', '--exchange', dest='exchange', default='hitbtc2',
+		parser.add_option('-x', '--exchange', dest='exchange',
+			default='hitbtc2',
 			help='the exchange ID, e.g. "hitbtc2" or "bittrex".')
-		parser.add_option('-m', "--market", dest="market", default="BTC/USD",
+		parser.add_option('-m', "--market", dest="market",
+			default="BTC/USD",
 			help='a standardized market symbol (default = "BTC/USD")')
-		parser.add_option('-t', "--timeframe", dest="timeframe", default='1m',
+		parser.add_option('-t', "--timeframe", dest="timeframe",
+			default='1m',
 			help='the time units, either: "1m", "5m", "1h", "1d" (default = "1m")')
 		parser.add_option('-P', "--predicted-field", dest="predicted_field",
 			default='btcusd_high',
 			help="""the field name that will be predicted, 
 			e.g. 'btcusd_high' | 'btcusd_low' (default = "btcusd_high")""")
-		parser.add_option('-n', '--magic-number', dest='magic_number', default=400,
-			help="""the magic number when training will stop and 
-			predictions will begin.""")
-		parser.add_option('--topic', dest='topic', default='trade',
+		parser.add_option('--topic', dest='topic',
+			default='trade',
 			help="The subscription topic of the data which will be sent to Nupic")
+		parser.add_option('--model', dest='model',
+			default='nupic_predict_buys_sells_model.yaml')
 
 		(options, args) = parser.parse_args()
 		return options, args
@@ -894,16 +906,50 @@ class NupicPredictor(object):
 		:rtype: None
 		"""
 
-		data_source = FileRecordStream(self.input_filename)
-		network = self.create_network(data_source)
-		network = self.configure_network(network)
+		try:
+			self.predictor_thread()
+		except KeyboardInterrupt as e:
+			self.input_file.close()
+			raise e
+		except StopIteration as e:
+			sys.stderr.writelines('{}: {}'.format(type(e), e))
+			raise e
+		except Exception as e:
+			sys.stderr.writelines('{}: {}'.format(type(e), e))
+			raise e
+
+	def predictor_thread(self):
+		i = 0
+		network = None
 		while True:
 			data = self.get_next_data()
-			if data['description'] == 'command':
+			if 'header_row' in data:
+				self.input_file.write(data['header_row'])
+				self.input_file.flush()
+				i += 1
+				if i >= 3:
+					data_source = FileRecordStream(self.input_filename)
+					network = self.create_network(data_source)
+					network = self.configure_network(network)
+			elif data['description'] == 'command':
 				if data['data'].lower() == 'quit':
 					exit(0)
 			elif data['description'] == 'trade':
 				p = self.get_next_prediction(network, data)
+				self.output_prediction(p)
+			elif data['description'] == 'raw':
+				self.input_file.write(data['data'])
+				self.input_file.flush()
+				p = Prediction(
+					time_predicted=str(datetime.now(tz=pytz.UTC)),
+					exchange=self.exchange_id,
+					market=self.symbol,
+					timeframe=self.timeframe,
+					prediction_type='F',
+					prediction=1000.0,
+					confidence=1.0,
+					actual=None,
+					pct_error=0.0)
 				self.output_prediction(p)
 
 	def get_next_data(self):
@@ -915,8 +961,9 @@ class NupicPredictor(object):
 
 		try:
 			# block until the next trade or command is recieved
-			json_data = sys.stdin.readline()
-			return json.loads(json_data)
+			json_data = self.input_stream.readline()
+			data = json.loads(json_data)
+			return data
 		except EOFError:
 			exit(1)
 
@@ -940,8 +987,9 @@ class NupicPredictor(object):
 		predictionResults = getPredictionResults(network, "classifier")
 		predicted_value = predictionResults[1]["predictedValue"]
 		confidence = predictionResults[1]["predictionConfidence"]
+		tp = data['time_closed'] + self.timeframe_td
 		p = Prediction(
-			time_predicted=data['time_closed'] + self.timeframe_td,
+			time_predicted=str(tp),
 			exchange=self.exchange_id,
 			market=self.symbol,
 			timeframe=self.timeframe,
@@ -965,15 +1013,16 @@ class NupicPredictor(object):
 		"""
 
 		json_string = json.dumps(prediction.to_dict())
-		sys.stdout.write(json_string + '\n')
-		sys.stdout.flush()
+		self.output_stream.write(json_string)
+		self.output_stream.write('\n')
+		self.output_stream.flush()
 		return json_string
 
 
 if __name__ == "__main__":
-	predictor = NupicPredictor()
-	predictor.run()
-
+	predictor = NupicPredictor(parse_args=True)
+	predictor.start()
+	predictor.join()
 
 
 
