@@ -7,8 +7,8 @@ import yaml
 import requests
 import pandas as pd
 import pytz
-import logging
 import traceback
+from subprocess import Popen
 from dateutil import parser, tz
 from datetime import datetime, timedelta
 from nupic.engine import Network
@@ -782,6 +782,7 @@ class NupicPredictor(Thread):
 	def __del__(self):
 		if not self.input_file.closed:
 			self.input_file.close()
+		Popen(['rm', 'self.input_file'])
 
 	def __str__(self):
 		return self.name
