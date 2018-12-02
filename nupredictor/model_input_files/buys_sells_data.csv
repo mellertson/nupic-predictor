@@ -1,0 +1,7 @@
+timestamp, hitbtc2_btcusdt_side, hitbtc2_btcusdt_size
+datetime, string, float
+T,  ,
+2018-06-10 22:58:00.000000,buy,12.3
+2018-06-10 22:59:00.000000,buy,0.25
+2018-06-10 23:00:00.000000,sell,1.42
+2018-06-10 23:01:00.000000,buy,4.28

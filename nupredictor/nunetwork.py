@@ -782,7 +782,7 @@ class NupicPredictor(Thread):
 	def __del__(self):
 		if not self.input_file.closed:
 			self.input_file.close()
-		Popen(['rm', 'self.input_file'])
+		Popen(['rm', '{}'.format(self.input_file)])
 
 	def __str__(self):
 		return self.name
