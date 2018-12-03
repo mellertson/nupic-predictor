@@ -66,6 +66,8 @@ modelParams:
       hitbtc2_btcusdt_side:
         fieldname: hitbtc2_btcusdt_side
         name: hitbtc2_btcusdt_side
+        w: 21
+        categoryList: ['buy', 'sell']
         type: CategoryEncoder
       hitbtc2_btcusdt_size:
         fieldname: hitbtc2_btcusdt_size

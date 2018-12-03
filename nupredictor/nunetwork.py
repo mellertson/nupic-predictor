@@ -126,7 +126,7 @@ class DateTimeUtils(object):
 
 class Prediction(object):
 	def __init__(self, time_predicted, exchange, market, timeframe,
-				 prediction_type, prediction, confidence, actual, pct_error):
+				 prediction_type, prediction, confidence, actual, pct_error, anomaly_score):
 		self.time_predicted = time_predicted
 		self.exchange = exchange
 		self.market = market
@@ -136,6 +136,7 @@ class Prediction(object):
 		self.confidence = confidence
 		self.actual = actual
 		self.pct_error = pct_error
+		self.anomaly_score = anomaly_score
 
 	def to_dict(self):
 		"""
@@ -143,21 +144,27 @@ class Prediction(object):
 
 		:rtype: dict
 		"""
+
+		if self.confidence is not None:
+			confidence = float(self.confidence)
+		else:
+			confidence = None
 		return {
 			'predicted_time': self.time_predicted,
 			'market_id': '{}-{}'.format(self.exchange, self.market),
 			'timeframe': self.timeframe,
-			'value': self.prediction,
-			'value_str': str(self.prediction),
-			'confidence': self.confidence,
-			'actual_value': self.actual,
-			'actual_value_str': str(self.actual),
+			'value': float(self.prediction) if self.prediction else None,
+			'value_str': str(self.prediction) if self.prediction else '',
+			'confidence': confidence,
+			'actual_value': float(self.actual) if self.actual else None,
+			'actual_value_str': str(self.actual) if self.actual else '',
 			'pct_diff': self.pct_error,
 			'attribute': None,
 			'data_type': 'float',
 			'predictor': 'nupic',
 			'data_set': None,
 			'type': self.prediction_type,
+			'anomaly_score': float(self.anomaly_score) if self.anomaly_score else None,
 		}
 
 
@@ -604,9 +611,15 @@ def createEncoder(encoderParams):
 
 def getPredictionResults(network, clRegionName):
 	"""Get prediction results for all prediction steps."""
+
 	classifierRegion = network.regions[clRegionName]
+	temporalPoolerRegion = network.regions["TM"]
+	sensorRegion = network.regions["sensor"]
+	input_value = sensorRegion.getOutputData("sourceOut")[1]
 	actualValues = classifierRegion.getOutputData("actualValues")
 	probabilities = classifierRegion.getOutputData("probabilities")
+	anomalyScore = temporalPoolerRegion.getOutputData("anomalyScore")[0]
+
 	steps = classifierRegion.getSelf().stepsList
 	N = classifierRegion.getSelf().maxCategoryCount
 	results = {step: {} for step in steps}
@@ -618,6 +631,8 @@ def getPredictionResults(network, clRegionName):
 		predictionConfidence = stepProbabilities[mostLikelyCategoryIdx]
 		results[steps[i]]["predictedValue"] = predictedValue
 		results[steps[i]]["predictionConfidence"] = predictionConfidence
+		results[steps[i]]["inputValue"] = input_value
+		results[steps[i]]["anomalyScore"] = anomalyScore
 	return results
 
 
@@ -758,7 +773,9 @@ class NupicPredictor(Thread):
 		self.dir = os.path.join(
 			self.models_dir,
 			os.path.dirname(os.path.abspath(__file__)))
-		self.model_fqfn = self.build_dir(self.model_filename)
+		self.model_fqfn = os.path.join(
+			os.path.join(self.dir, 'model_input_files'),
+			self.model_filename)
 		self.results_fqfn = self.build_dir('results.csv')
 		self.topic = self.options.topic
 		self.exchange_id = self.options.exchange
@@ -910,14 +927,25 @@ class NupicPredictor(Thread):
 			self.predicted_field)
 
 		# Enable learning for all regions
-		network.regions["SP"].setParameter("learningMode", 1)
-		network.regions["TM"].setParameter("learningMode", 1)
-		network.regions["classifier"].setParameter("learningMode", 1)
+		network.regions["SP"].setParameter("learningMode", True)
+		network.regions["TM"].setParameter("learningMode", True)
+		network.regions["classifier"].setParameter("learningMode", True)
 
 		# Enable inference for all regions
-		network.regions["SP"].setParameter("inferenceMode", 1)
-		network.regions["TM"].setParameter("inferenceMode", 1)
-		network.regions["classifier"].setParameter("inferenceMode", 1)
+		network.regions["SP"].setParameter("inferenceMode", True)
+		network.regions["TM"].setParameter("inferenceMode", True)
+		network.regions["classifier"].setParameter("inferenceMode", True)
+
+		# We want temporal anomalies so disable anomalyMode in the SP. This mode is
+		# used for computing anomalies in a non-temporal model.
+		network.regions["SP"].setParameter("anomalyMode", False)
+
+		# Enable topDownMode to get the predicted columns output
+		network.regions["TM"].setParameter("topDownMode", True)
+
+		# Enable anomalyMode to compute the anomaly score.
+		network.regions["TM"].setParameter("anomalyMode", True)
+
 		return network
 
 	def run(self):
@@ -944,8 +972,9 @@ class NupicPredictor(Thread):
 		network = None
 		while True:
 			data = self.get_next_data()
-			if 'header_row' in data:
-				self.input_file.write(data['header_row'])
+			if data['description'] == 'header_row':
+				self.input_file.write(data['row'])
+				self.input_file.write('\n')
 				self.input_file.flush()
 				i += 1
 				if i >= 3:
@@ -956,7 +985,8 @@ class NupicPredictor(Thread):
 				if data['data'].lower() == 'quit':
 					exit(0)
 			elif data['description'] == 'trade':
-				self.input_file.write(data['data'])
+				self.input_file.write(data['row'])
+				self.input_file.write('\n')
 				self.input_file.flush()
 				p = self.get_next_prediction(network, data)
 				self.output_prediction(p)
@@ -1010,7 +1040,8 @@ class NupicPredictor(Thread):
 		predictionResults = getPredictionResults(network, "classifier")
 		predicted_value = predictionResults[1]["predictedValue"]
 		confidence = predictionResults[1]["predictionConfidence"]
-		tp = data['time_closed'] + self.timeframe_td
+		tc = parser.parse(data['data']['time_closed'])
+		tp = tc + self.timeframe_td
 		p = Prediction(
 			time_predicted=str(tp),
 			exchange=self.exchange_id,
@@ -1019,8 +1050,10 @@ class NupicPredictor(Thread):
 			prediction_type='F',
 			prediction=predicted_value,
 			confidence=confidence * 100,
-			actual=None,
-			pct_error=None)
+			actual=predictionResults[1]['inputValue'],
+			pct_error=None,
+			anomaly_score=predictionResults[1]['anomalyScore'],
+		)
 		return p
 
 	def output_prediction(self, prediction):
@@ -1035,7 +1068,8 @@ class NupicPredictor(Thread):
 		:rtype: str
 		"""
 
-		json_string = json.dumps(prediction.to_dict())
+		d = prediction.to_dict()
+		json_string = json.dumps(d)
 		self.output_stream.write(json_string)
 		self.output_stream.write('\n')
 		self.output_stream.flush()
