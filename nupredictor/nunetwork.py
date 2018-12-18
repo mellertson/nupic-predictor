@@ -20,6 +20,7 @@ from nupredictor.functions import get_files
 from nupredictor.utilities import parse_time_units
 from socket import getfqdn, gethostname
 import threading as t
+import multiprocessing as mp
 
 
 SUBSCRIBED = 1
@@ -39,8 +40,11 @@ __all__ = [
 	'write_input_file',
 	'get_services',
 	'getPredictionResults',
+	'enableLearning',
+	'disableLearning',
 
 	# classes
+	'Prediction',
 	'DateTimeUtils',
 	'JSONMessage',
 	'NupicPredictor',
@@ -60,6 +64,10 @@ def error_log_stack(e):
 	sys.stderr.writelines(stack)
 	sys.stderr.writelines([''])
 	sys.stderr.writelines(['Exception: {}'.format(e)])
+
+
+class StopThread(Exception):
+	""" Raised to stop the current thread """
 
 
 class DateTimeUtils(object):
@@ -125,48 +133,20 @@ class DateTimeUtils(object):
 		return dt.strftime(cls.FMT)
 
 
-class Prediction(object):
+class Prediction(dict):
 	def __init__(self, time_predicted, exchange, market, timeframe,
 				 prediction_type, prediction, confidence, actual, pct_error, anomaly_score):
-		self.time_predicted = time_predicted
-		self.exchange = exchange
-		self.market = market
-		self.timeframe = timeframe
-		self.prediction_type = prediction_type
-		self.prediction = prediction
-		self.confidence = confidence
-		self.actual = actual
-		self.pct_error = pct_error
-		self.anomaly_score = anomaly_score
-
-	def to_dict(self):
-		"""
-		Converts the prediction to a python dictionary
-
-		:rtype: dict
-		"""
-
-		if self.confidence is not None:
-			confidence = float(self.confidence)
-		else:
-			confidence = None
-		return {
-			'predicted_time': self.time_predicted,
-			'market_id': '{}-{}'.format(self.exchange, self.market),
-			'timeframe': self.timeframe,
-			'value': float(self.prediction) if self.prediction else None,
-			'value_str': str(self.prediction) if self.prediction else '',
-			'confidence': confidence,
-			'actual_value': float(self.actual) if self.actual else None,
-			'actual_value_str': str(self.actual) if self.actual else '',
-			'pct_diff': self.pct_error,
-			'attribute': None,
-			'data_type': 'float',
-			'predictor': 'nupic',
-			'data_set': None,
-			'type': self.prediction_type,
-			'anomaly_score': float(self.anomaly_score) if self.anomaly_score else None,
-		}
+		super(Prediction, self).__init__()
+		self['time_predicted'] = time_predicted
+		self['exchange'] = exchange
+		self['market'] = market
+		self['timeframe'] = timeframe
+		self['prediction_type'] = prediction_type
+		self['prediction'] = prediction
+		self['confidence'] = confidence
+		self['actual'] = actual
+		self['pct_error'] = pct_error
+		self['anomaly_score'] = anomaly_score
 
 
 class bcolors(object):
@@ -720,8 +700,11 @@ def get_start_end_dates(time_units):
 class JSONMessage(object):
 	TYPE_HEADER = 'header-row'
 	TYPE_NET_INITIALIZED = 'network-initialized'
-	TYPE_PREDICTION = 'prediction'
+	TYPE_PREDICT = 'predict'
+	TYPE_PREDICTION_RESULT = 'prediction-result'
+	TYPE_TRAIN_NUPIC = 'train-Nupic'
 	TYPE_TRAIN_CONFIRMATION = 'training-confirmation'
+	TYPE_QUIT = 'quit'
 
 	@classmethod
 	def build(cls, message_type, message):
@@ -732,7 +715,7 @@ class JSONMessage(object):
 			Either: 'header-row', 'network-initialized', 'prediction', 'training-confirmation'
 		:type message_type: str
 		:param message:
-		:type message: dict
+		:type message: dict | str
 		:return:
 			A message with the following format:
 				{
@@ -760,8 +743,7 @@ class NupicPredictor(t.Thread):
 
 	def __init__(self, topic=None, exchange=None, market=None,
 				 predicted_field=None, timeframe=None,
-				 parse_args=False, model_filename=None,
-				 input_stream=sys.stdin, output_stream=sys.stdout):
+				 parse_args=False, model_filename=None):
 		super(NupicPredictor, self).__init__(
 			target=self.run, name='NupicPredictor.run')
 		self.network = None
@@ -803,10 +785,9 @@ class NupicPredictor(t.Thread):
 		self.input_filename = '/tmp/{}-{}.csv'.format(
 			random.randint(1, 999999999), self.name)
 		self.input_file = open(self.input_filename, 'w+')
-		self.input_stream = input_stream
-		self.output_stream = output_stream
 		self.is_started = t.Event()
 		self.is_started.clear()
+		self.command_queue = mp.Queue()
 
 	def __del__(self):
 		if not self.input_file.closed:
@@ -964,6 +945,7 @@ class NupicPredictor(t.Thread):
 	def write_to_input_file(self, data, append_newline=True):
 		"""
 		Write the given data string to the Nupic model's input file
+
 		:param data:
 			The data to be written to the Nupic model's input file
 		:type data: string
@@ -988,7 +970,7 @@ class NupicPredictor(t.Thread):
 
 		try:
 			# block until the next trade or command is recieved
-			json_data = self.input_stream.readline()
+			json_data = sys.stdin.readline()
 			data = json.loads(json_data)
 			return data
 		except EOFError:
@@ -1014,7 +996,7 @@ class NupicPredictor(t.Thread):
 		predictionResults = getPredictionResults(network, "classifier")
 		predicted_value = predictionResults[1]["predictedValue"]
 		confidence = predictionResults[1]["predictionConfidence"]
-		tc = parser.parse(data['data']['time_closed'])
+		tc = parser.parse(data['message']['timestamp'])
 		tp = tc + self.timeframe_td
 		p = Prediction(
 			time_predicted=str(tp),
@@ -1056,8 +1038,8 @@ class NupicPredictor(t.Thread):
 		"""
 
 		prediction_message = JSONMessage.build(
-			JSONMessage.TYPE_PREDICTION,
-			prediction.to_dict())
+			JSONMessage.TYPE_PREDICTION_RESULT,
+			prediction)
 		return self.output_message(prediction_message)
 
 	def output_training_confirmation(self):
@@ -1087,13 +1069,12 @@ class NupicPredictor(t.Thread):
 		"""
 
 		json_string = json.dumps(message)
-		self.output_stream.write(json_string)
-		self.output_stream.write('\n')
-		self.output_stream.flush()
+		sys.stdout.write(json_string)
+		sys.stdout.write('\n')
+		sys.stdout.flush()
 		return json_string
 
 	def predictor_thread(self):
-		i = 0
 		self.network = None
 		while True:
 			# block until the next command is
@@ -1101,24 +1082,28 @@ class NupicPredictor(t.Thread):
 			data = self.get_next_data()
 
 			# instantiate and initialize the Nupic network
-			if data['description'] == 'header_row':
-				self.write_to_input_file(data['row'])
-				i += 1
-				if i >= 3:
-					data_source = FileRecordStream(self.input_filename)
-					self.network = self.create_network(data_source)
-					self.network = self.configure_network(self.network)
+			if data['type'] == JSONMessage.TYPE_HEADER:
+				for key, line in data['message'].items():
+					self.write_to_input_file(line)
+
+				data_source = FileRecordStream(self.input_filename)
+				self.network = self.create_network(data_source)
+				self.network = self.configure_network(self.network)
+				self.output_message(JSONMessage.build(
+					JSONMessage.TYPE_NET_INITIALIZED,
+					'The Nupic network was successfully initialized')
+				)
 
 			# make a prediction
-			elif data['description'] in ['predict-and-learn', 'predict']:
-				self.write_to_input_file(data['row'])
+			elif data['type'] in ['predict-and-learn', JSONMessage.TYPE_PREDICT]:
+				self.write_to_input_file(data['message']['row'])
 
 				# turn on learning
-				if data['description'] == 'predict-and-learn':
+				if data['type'] == 'predict-and-learn':
 					enableLearning(self.network)
 
 				# turn off learning
-				elif data['description'] == 'predict':
+				elif data['type'] == JSONMessage.TYPE_PREDICT:
 					disableLearning(self.network)
 
 				# make and return the prediction
@@ -1126,15 +1111,15 @@ class NupicPredictor(t.Thread):
 				self.output_prediction(p)
 
 			# just train the network
-			elif data['description'] == 'train':
-				self.write_to_input_file(data['row'])
+			elif data['type'] == JSONMessage.TYPE_TRAIN_NUPIC:
+				self.write_to_input_file(data['message']['row'])
 				enableLearning(self.network)
 				self.train(self.network)
 				self.output_training_confirmation()
 
 			# write "raw" data to input file without a
 			# newline character and make a prediction
-			elif data['description'] == 'raw':
+			elif data['type'] == 'raw':
 				self.write_to_input_file(data['row'], append_newline=False)
 				p = Prediction(
 					time_predicted=str(datetime.now(tz=pytz.UTC)),
@@ -1150,9 +1135,8 @@ class NupicPredictor(t.Thread):
 				self.output_prediction(p)
 
 			# shut down the predictor
-			elif data['description'] == 'command':
-				if data['data'].lower() == 'quit':
-					exit(0)
+			elif data['type'] == JSONMessage.TYPE_QUIT:
+				exit(0)
 
 	def run(self):
 		"""
@@ -1162,6 +1146,7 @@ class NupicPredictor(t.Thread):
 		"""
 
 		try:
+			self.is_started.set()
 			self.predictor_thread()
 		except KeyboardInterrupt as e:
 			self.input_file.close()
@@ -1172,7 +1157,6 @@ class NupicPredictor(t.Thread):
 		except Exception as e:
 			error_log_stack(e)
 			raise e
-
 
 
 if __name__ == "__main__":

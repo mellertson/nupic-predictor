@@ -1,15 +1,18 @@
 from unittest import TestCase, skip
 import re, os, json, io, sys, subprocess as sp, mock
-import nupic
 from random import randint
 from datetime import datetime, timedelta
 from time import sleep
 import numpy as np
+import nupic
 from dateutil import parser
 from nupredictor.nunetwork import *
 from nupredictor.functions import get_files
 from socket import gethostname, getfqdn
 from nupic.data.file_record_stream import FileRecordStream
+import threading
+import multiprocessing as mp
+from timeout_wrapper import timeout
 
 
 def heading(msg):
@@ -389,33 +392,45 @@ class Modify_Output_File(TestCase):
 class NupicPredictor_Tests(TestCase):
 
 	def setUp(self):
-		n = randint(1, 99999999999)
-		self.stdin_filename = '/tmp/reader_{}'.format(n)
-		self.stdout_filename = '/tmp/writer_{}'.format(n)
-		self.stdin_file = open(self.stdin_filename, 'ab+', buffering=0)
-		self.stdout_file = open(self.stdout_filename, 'ab+', buffering=0)
+		self.to_queue = mp.Queue()
+		self.from_queue = mp.Queue()
 		self.topic = 'trade'
 		self.exchange_id = 'hitbtc2'
 		self.market = 'BTC/USDT'
-		self.predicted_field = 'btcusdt_close'
+		self.predicted_field = 'btcusd_close'
 		self.timeframe = '1m'
 		self.model_filename = 'nupic_network_model.yaml'
-		self.input_stream = io.BufferedReader(self.stdin_file)
-		self.output_stream = io.BufferedWriter(self.stdout_file)
 		self.predictor = NupicPredictor(
 			topic=self.topic,
 			exchange=self.exchange_id,
 			market=self.market,
 			predicted_field=self.predicted_field,
 			timeframe=self.timeframe,
-			model_filename=self.model_filename,
-			input_stream=self.input_stream,
-			output_stream=self.output_stream)
+			model_filename=self.model_filename)
+
+		# mock
+		self.predictor.get_next_data = self.get_next_data
+		self.predictor.output_message = self.output_message
+
+		# start the predictor thread
+		self.predictor.start()
+		self.predictor.is_started.wait()
 
 	def tearDown(self):
-		# close open files
-		self.stdin_file.close()
-		self.stdout_file.close()
+		# shutdown
+		self.to_queue.put(JSONMessage.build(
+			JSONMessage.TYPE_QUIT, 'quit'))
+		os.remove(self.predictor.input_filename)
+
+	def get_next_data(self):
+		data = self.to_queue.get()
+		data = str(data)
+		data = json.loads(data)
+		return data
+
+	def output_message(self, message):
+		self.from_queue.put(message)
+		return message
 
 	# test: __init__()
 
@@ -431,9 +446,7 @@ class NupicPredictor_Tests(TestCase):
 			market=self.market,
 			predicted_field=self.predicted_field,
 			timeframe=self.timeframe,
-			model_filename=self.model_filename,
-			input_stream=self.input_stream,
-			output_stream=self.output_stream)
+			model_filename=self.model_filename)
 		input_filename = '/tmp/500-{}.csv'.format(p.name)
 
 		# verify
@@ -449,20 +462,13 @@ class NupicPredictor_Tests(TestCase):
 		self.assertEqual(DateTimeUtils.string_to_timeframe(self.timeframe), p.timeframe_td)
 		self.assertEqual(self.model_filename, p.options.model)
 		self.assertEqual(self.model_filename, p.model_filename)
-		self.assertEqual(self.input_stream, p.input_stream)
-		self.assertEqual(self.output_stream, p.output_stream)
 		self.assertEqual(input_filename, p.input_filename)
 		self.assertIsInstance(p.input_file, file)
 		self.assertFalse(p.input_file.closed)
 
 	# test: predictor_thread()
 
-	def test_predictor_thread__network_should_be_instantiated(self):
-		# setup
-		p = self.predictor
-		p.start()
-		p.is_started.wait()
-
+	def test_predictor_thread____send_header_message(self):
 		# test: send header row to the predictor
 		msg = JSONMessage.build(JSONMessage.TYPE_HEADER, {
 			'row1': "timestamp, btcusd_open, btcusd_high, btcusd_low, btcusd_close, btcusd_volume, btcusd_lastSize",
@@ -470,11 +476,84 @@ class NupicPredictor_Tests(TestCase):
 			'row3': "T,  ,  ,  ,  ,  ,  ",
 		})
 		json_msg = json.dumps(msg)
-		self.stdin_file.write(json_msg)
+		self.to_queue.put(json_msg)
+
+		# verify the confirmation message
+		msg = self.from_queue.get(timeout=5)
+		self.assertIn('type', msg)
+		self.assertEqual(JSONMessage.TYPE_NET_INITIALIZED, msg['type'])
+		self.assertIn('message', msg)
+		self.assertEqual(msg['message'], 'The Nupic network was successfully initialized')
 
 		# verify
-		self.assertIsInstance(p.network, nupic.engine.Network)
-		
+		self.assertIsInstance(self.predictor.network, nupic.engine.Network)
+
+	def disable_learning(self, network):
+		print('disable learning called...')
+
+	def enable_learning(self, network):
+		print('enable learning called...')
+
+	@mock.patch(target='nupredictor.nunetwork.enableLearning')
+	@mock.patch(target='nupredictor.nunetwork.disableLearning')
+	def test_predictor_thread____send_predict_message(self, m_dlearn, m_elearn):
+		# setup
+		self.test_predictor_thread____send_header_message()
+		m_dlearn.side_effect = self.disable_learning
+		m_elearn.side_effect = self.enable_learning
+
+		# test
+		msg = JSONMessage.build(
+			JSONMessage.TYPE_PREDICT,
+			{
+				'row':'2018-06-10 22:58:00.000000,6702.0,6709.0,6693.0,6708.5,5802146.0,800.0',
+				'timestamp': '2018-06-10 22:58:00.000000',
+			})
+		self.to_queue.put(json.dumps(msg))
+
+		# verify
+		try:
+			msg = self.from_queue.get(timeout=5)
+		except:
+			self.assertTrue(False, 'timed out waiting for the prediction')
+		self.assertIn('type', msg)
+		self.assertEqual(JSONMessage.TYPE_PREDICTION_RESULT, msg['type'])
+		self.assertIn('message', msg)
+		self.assertIsInstance(msg['message'], Prediction)
+		self.assertEqual(1, m_dlearn.call_count)
+		self.assertEqual(0, m_elearn.call_count)
+
+	@mock.patch(target='nupredictor.nunetwork.enableLearning')
+	@mock.patch(target='nupredictor.nunetwork.disableLearning')
+	def test_predictor_thread____send_training_message(self, m_dlearn, m_elearn):
+		# setup
+		self.test_predictor_thread____send_header_message()
+		m_dlearn.side_effect = self.disable_learning
+		m_elearn.side_effect = self.enable_learning
+
+		# test: send "train Nupic" message
+		msg = JSONMessage.build(
+			JSONMessage.TYPE_TRAIN_NUPIC,
+			{
+				'row': '2018-06-10 22:58:00.000000,6702.0,6709.0,6693.0,6708.5,5802146.0,800.0',
+				'timestamp': '2018-06-10 22:58:00.000000',
+			})
+		self.to_queue.put(json.dumps(msg))
+
+		# verify: "trainining confirmed" message received
+		try:
+			msg = self.from_queue.get(timeout=5)
+		except:
+			self.assertTrue(False, 'timed out waiting for the prediction')
+		self.assertIn('type', msg)
+		self.assertEqual(JSONMessage.TYPE_TRAIN_CONFIRMATION, msg['type'])
+		self.assertEqual(0, m_dlearn.call_count)
+		self.assertEqual(1, m_elearn.call_count)
+
+
+
+
+
 
 
 
