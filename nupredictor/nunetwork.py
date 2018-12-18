@@ -8,6 +8,7 @@ import requests
 import pandas as pd
 import pytz
 import traceback
+import random
 from subprocess import Popen
 from dateutil import parser, tz
 from datetime import datetime, timedelta
@@ -17,9 +18,8 @@ from nupic.data.file_record_stream import FileRecordStream
 from optparse import OptionParser
 from nupredictor.functions import get_files
 from nupredictor.utilities import parse_time_units
-from random import randint
 from socket import getfqdn, gethostname
-from threading import Thread
+import threading as t
 
 
 SUBSCRIBED = 1
@@ -42,6 +42,7 @@ __all__ = [
 
 	# classes
 	'DateTimeUtils',
+	'JSONMessage',
 	'NupicPredictor',
 ]
 
@@ -650,29 +651,6 @@ def disableLearning(network):
 	network.regions["classifier"].setParameter("learningMode", 0)
 
 
-def build_model(fq_input_filename, fq_model_filename, predicted_field):
-	"""
-	Build and initialize a Nupic network (model)
-
-	:param fq_input_filename: The fully qualified path to the Nupic formatted input file name
-	:type fq_input_filename: str
-	:param fq_model_filename: The fully qualified path to the Nupic model parameters (in YAML format)
-	:type fq_model_filename: str
-	:param predicted_field: The "fieldname", identified in the model parameters file, which will be predicted, e.g. "spread" or "m1_ask"
-	:type predicted_field: str
-
-	:rtype: nupic.engine.Network
-	"""
-
-	# Create a data source for the network.
-	dataSource = FileRecordStream(streamID=fq_input_filename)
-	network = createNetwork(dataSource=dataSource, fq_model_filename=fq_model_filename)
-
-	# Configure the network according to the model parameters
-	configureNetwork(network=network, predicted_field=predicted_field)
-	return network
-
-
 def store_prediction(url, username, password, action, prediction):
 	"""
 	Sends the prediction to the Django server
@@ -739,10 +717,41 @@ def get_start_end_dates(time_units):
 	return { 'start':start, 'end':end }
 
 
-class NupicPredictor(Thread):
+class JSONMessage(object):
+	TYPE_HEADER = 'header-row'
+	TYPE_NET_INITIALIZED = 'network-initialized'
+	TYPE_PREDICTION = 'prediction'
+	TYPE_TRAIN_CONFIRMATION = 'training-confirmation'
+
+	@classmethod
+	def build(cls, message_type, message):
+		"""
+		Build a JSON message from a message in a Python dictionary
+
+		:param message_type:
+			Either: 'header-row', 'network-initialized', 'prediction', 'training-confirmation'
+		:type message_type: str
+		:param message:
+		:type message: dict
+		:return:
+			A message with the following format:
+				{
+					'type': 'header-row' | 'network-initialized' | 'prediction' | 'training-confirmation',
+					'message': message,
+				}
+		:rtype: dict
+		"""
+
+		return {'type': message_type, 'message': message}
+
+
+class NupicPredictor(t.Thread):
 	"""
 	A predictor which constructs and uses a Nupic model
 
+	:ivar network:
+		The Nupic network (the model)
+	:type network: nupic.engine.Network
 	:ivar predicted_field:
 			The "fieldname", identified in the model parameters file,
 			which will be predicted, e.g. "spread" or "m1_ask"
@@ -755,6 +764,7 @@ class NupicPredictor(Thread):
 				 input_stream=sys.stdin, output_stream=sys.stdout):
 		super(NupicPredictor, self).__init__(
 			target=self.run, name='NupicPredictor.run')
+		self.network = None
 		if parse_args:
 			self.options = self.parse_options()[0]
 		else:
@@ -791,15 +801,18 @@ class NupicPredictor(Thread):
 			self.predicted_field,
 			self.timeframe)
 		self.input_filename = '/tmp/{}-{}.csv'.format(
-			randint(1, 999999999), self.name)
+			random.randint(1, 999999999), self.name)
 		self.input_file = open(self.input_filename, 'w+')
 		self.input_stream = input_stream
 		self.output_stream = output_stream
+		self.is_started = t.Event()
+		self.is_started.clear()
 
 	def __del__(self):
 		if not self.input_file.closed:
 			self.input_file.close()
-		Popen(['rm', '{}'.format(self.input_file)])
+		print('Input file closed: {}'.format(self.input_filename))
+		Popen(['rm', '{}'.format(self.input_filename)])
 
 	def __str__(self):
 		return self.name
@@ -844,12 +857,12 @@ class NupicPredictor(Thread):
 
 	def create_network(self, data_source):
 		"""
-		Create and initialize the Nupic model (a.k.a. Network)
+		Create and initialize the Nupic network (a.k.a. model)
 
 		:param data_source: The input data source for the Nupic model
 		:type data_source: FileRecordStream
 
-		:returns: A fully initialized Nupic model (a.k.a. Network)
+		:returns: A fully initialized Nupic network (a.k.a. model)
 		:rtype: nupic.engine.Network
 		"""
 
@@ -948,62 +961,23 @@ class NupicPredictor(Thread):
 
 		return network
 
-	def run(self):
+	def write_to_input_file(self, data, append_newline=True):
 		"""
-		The main entry point of this nupic predictor
+		Write the given data string to the Nupic model's input file
+		:param data:
+			The data to be written to the Nupic model's input file
+		:type data: string
+		:param append_newline:
+			If True, a newline will be written to the input file
+		:type append_newline: bool
 
 		:rtype: None
 		"""
 
-		try:
-			self.predictor_thread()
-		except KeyboardInterrupt as e:
-			self.input_file.close()
-			raise e
-		except StopIteration as e:
-			error_log_stack(e)
-			raise e
-		except Exception as e:
-			error_log_stack(e)
-			raise e
-
-	def predictor_thread(self):
-		i = 0
-		network = None
-		while True:
-			data = self.get_next_data()
-			if data['description'] == 'header_row':
-				self.input_file.write(data['row'])
-				self.input_file.write('\n')
-				self.input_file.flush()
-				i += 1
-				if i >= 3:
-					data_source = FileRecordStream(self.input_filename)
-					network = self.create_network(data_source)
-					network = self.configure_network(network)
-			elif data['description'] == 'command':
-				if data['data'].lower() == 'quit':
-					exit(0)
-			elif data['description'] == 'trade':
-				self.input_file.write(data['row'])
-				self.input_file.write('\n')
-				self.input_file.flush()
-				p = self.get_next_prediction(network, data)
-				self.output_prediction(p)
-			elif data['description'] == 'raw':
-				self.input_file.write(data['data'])
-				self.input_file.flush()
-				p = Prediction(
-					time_predicted=str(datetime.now(tz=pytz.UTC)),
-					exchange=self.exchange_id,
-					market=self.symbol,
-					timeframe=self.timeframe,
-					prediction_type='F',
-					prediction=1000.0,
-					confidence=1.0,
-					actual=None,
-					pct_error=0.0)
-				self.output_prediction(p)
+		self.input_file.write(data)
+		if append_newline:
+			self.input_file.write('\n')
+		self.input_file.flush()
 
 	def get_next_data(self):
 		"""
@@ -1022,7 +996,7 @@ class NupicPredictor(Thread):
 
 	def get_next_prediction(self, network, data):
 		"""
-		run the Nupic predictor, save the results to the 'model_output_files' directory
+		Make a prediction and save it to the 'model_output_files' directory
 
 		:param network:
 			The Nupic network, which will make the prediction
@@ -1056,6 +1030,19 @@ class NupicPredictor(Thread):
 		)
 		return p
 
+	def train(self, network):
+		"""
+		Train the network without making a prediction
+
+		:param network:
+			The Nupic network, which will be trained
+		:type network: nupic.engine.Network
+
+		:rtype: None
+		"""
+
+		network.run(1)
+
 	def output_prediction(self, prediction):
 		"""
 		Write the prediction to standard output as a JSON string
@@ -1068,12 +1055,124 @@ class NupicPredictor(Thread):
 		:rtype: str
 		"""
 
-		d = prediction.to_dict()
-		json_string = json.dumps(d)
+		prediction_message = JSONMessage.build(
+			JSONMessage.TYPE_PREDICTION,
+			prediction.to_dict())
+		return self.output_message(prediction_message)
+
+	def output_training_confirmation(self):
+		"""
+		Write a confirmation message to standard output as a JSON string
+
+		:return:
+			A confirmation message as a JSON string
+		:rtype: str
+		"""
+
+		confirmation = JSONMessage.build(
+			JSONMessage.TYPE_TRAIN_CONFIRMATION,
+			'The Nupic network was trained successfully')
+		return self.output_message(confirmation)
+
+	def output_message(self, message):
+		"""
+		Write a message to standard output as a JSON string
+
+		:param message:
+			A Python dictionary which will be converted to a
+			JSON string and written to standard output
+		:type message: dict
+
+		:rtype: str
+		"""
+
+		json_string = json.dumps(message)
 		self.output_stream.write(json_string)
 		self.output_stream.write('\n')
 		self.output_stream.flush()
 		return json_string
+
+	def predictor_thread(self):
+		i = 0
+		self.network = None
+		while True:
+			# block until the next command is
+			# received on standard input
+			data = self.get_next_data()
+
+			# instantiate and initialize the Nupic network
+			if data['description'] == 'header_row':
+				self.write_to_input_file(data['row'])
+				i += 1
+				if i >= 3:
+					data_source = FileRecordStream(self.input_filename)
+					self.network = self.create_network(data_source)
+					self.network = self.configure_network(self.network)
+
+			# make a prediction
+			elif data['description'] in ['predict-and-learn', 'predict']:
+				self.write_to_input_file(data['row'])
+
+				# turn on learning
+				if data['description'] == 'predict-and-learn':
+					enableLearning(self.network)
+
+				# turn off learning
+				elif data['description'] == 'predict':
+					disableLearning(self.network)
+
+				# make and return the prediction
+				p = self.get_next_prediction(self.network, data)
+				self.output_prediction(p)
+
+			# just train the network
+			elif data['description'] == 'train':
+				self.write_to_input_file(data['row'])
+				enableLearning(self.network)
+				self.train(self.network)
+				self.output_training_confirmation()
+
+			# write "raw" data to input file without a
+			# newline character and make a prediction
+			elif data['description'] == 'raw':
+				self.write_to_input_file(data['row'], append_newline=False)
+				p = Prediction(
+					time_predicted=str(datetime.now(tz=pytz.UTC)),
+					exchange=self.exchange_id,
+					market=self.symbol,
+					timeframe=self.timeframe,
+					prediction_type='F',
+					prediction=1000.0,
+					confidence=1.0,
+					actual=None,
+					pct_error=0.0,
+					anomaly_score=None)
+				self.output_prediction(p)
+
+			# shut down the predictor
+			elif data['description'] == 'command':
+				if data['data'].lower() == 'quit':
+					exit(0)
+
+	def run(self):
+		"""
+		The main entry point of this nupic predictor
+
+		:rtype: None
+		"""
+
+		try:
+			self.predictor_thread()
+		except KeyboardInterrupt as e:
+			self.input_file.close()
+			raise e
+		except StopIteration as e:
+			error_log_stack(e)
+			raise e
+		except Exception as e:
+			error_log_stack(e)
+			raise e
+
 
 
 if __name__ == "__main__":

@@ -1,5 +1,7 @@
 from unittest import TestCase, skip
-import re, os, json, sys, subprocess as sp
+import re, os, json, io, sys, subprocess as sp, mock
+import nupic
+from random import randint
 from datetime import datetime, timedelta
 from time import sleep
 import numpy as np
@@ -382,6 +384,115 @@ class Modify_Output_File(TestCase):
 			self.assertTrue(did_run, 'Permissions on file "{}" was not modified'.format(filename))
 			all_lines_ran = True
 		self.assertTrue(all_lines_ran, 'All lines in this test case were not executed')
+
+
+class NupicPredictor_Tests(TestCase):
+
+	def setUp(self):
+		n = randint(1, 99999999999)
+		self.stdin_filename = '/tmp/reader_{}'.format(n)
+		self.stdout_filename = '/tmp/writer_{}'.format(n)
+		self.stdin_file = open(self.stdin_filename, 'ab+', buffering=0)
+		self.stdout_file = open(self.stdout_filename, 'ab+', buffering=0)
+		self.topic = 'trade'
+		self.exchange_id = 'hitbtc2'
+		self.market = 'BTC/USDT'
+		self.predicted_field = 'btcusdt_close'
+		self.timeframe = '1m'
+		self.model_filename = 'nupic_network_model.yaml'
+		self.input_stream = io.BufferedReader(self.stdin_file)
+		self.output_stream = io.BufferedWriter(self.stdout_file)
+		self.predictor = NupicPredictor(
+			topic=self.topic,
+			exchange=self.exchange_id,
+			market=self.market,
+			predicted_field=self.predicted_field,
+			timeframe=self.timeframe,
+			model_filename=self.model_filename,
+			input_stream=self.input_stream,
+			output_stream=self.output_stream)
+
+	def tearDown(self):
+		# close open files
+		self.stdin_file.close()
+		self.stdout_file.close()
+
+	# test: __init__()
+
+	@mock.patch(target='random.randint')
+	def test__init__(self, rint):
+		# setup
+		rint.return_value = 500
+
+		# test
+		p = NupicPredictor(
+			topic=self.topic,
+			exchange=self.exchange_id,
+			market=self.market,
+			predicted_field=self.predicted_field,
+			timeframe=self.timeframe,
+			model_filename=self.model_filename,
+			input_stream=self.input_stream,
+			output_stream=self.output_stream)
+		input_filename = '/tmp/500-{}.csv'.format(p.name)
+
+		# verify
+		self.assertEqual(self.topic, p.topic)
+		self.assertEqual(self.exchange_id, p.options.exchange_id)
+		self.assertEqual(self.exchange_id, p.exchange_id)
+		self.assertEqual(self.market, p.symbol)
+		self.assertEqual(self.market, p.options.market)
+		self.assertEqual(self.predicted_field, p.options.predicted_field)
+		self.assertEqual(self.predicted_field, p.predicted_field)
+		self.assertEqual(self.timeframe, p.options.timeframe)
+		self.assertEqual(self.timeframe, p.timeframe)
+		self.assertEqual(DateTimeUtils.string_to_timeframe(self.timeframe), p.timeframe_td)
+		self.assertEqual(self.model_filename, p.options.model)
+		self.assertEqual(self.model_filename, p.model_filename)
+		self.assertEqual(self.input_stream, p.input_stream)
+		self.assertEqual(self.output_stream, p.output_stream)
+		self.assertEqual(input_filename, p.input_filename)
+		self.assertIsInstance(p.input_file, file)
+		self.assertFalse(p.input_file.closed)
+
+	# test: predictor_thread()
+
+	def test_predictor_thread__network_should_be_instantiated(self):
+		# setup
+		p = self.predictor
+		p.start()
+		p.is_started.wait()
+
+		# test: send header row to the predictor
+		msg = JSONMessage.build(JSONMessage.TYPE_HEADER, {
+			'row1': "timestamp, btcusd_open, btcusd_high, btcusd_low, btcusd_close, btcusd_volume, btcusd_lastSize",
+			'row2': "datetime, float, float, float, float, float, float",
+			'row3': "T,  ,  ,  ,  ,  ,  ",
+		})
+		json_msg = json.dumps(msg)
+		self.stdin_file.write(json_msg)
+
+		# verify
+		self.assertIsInstance(p.network, nupic.engine.Network)
+		
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
