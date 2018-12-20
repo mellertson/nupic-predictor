@@ -109,140 +109,6 @@ class Predictor_Functions(TestCase):
 			self.assertIn(eO_date, aO_dates,
 						  heading("Expected {} in the returned list of dates\n\nBut, got:\n{}".format(eO_date, aO_dates)))
 
-	# test: get_data()
-
-	@skip("Need to re-write this test case, so it imports a fixture for the data it will export in the test")
-	def test_get_data___with_1m_time_units____and_3000_data_points(self):
-		# inputs
-		start = self.start
-		filename = INPUT_FILE_PATH
-		data_points = 3000
-		time_unit = '1m'
-
-		# expected outputs
-		line_count = 3003
-		line1 = 'timestamp, consumption\n'
-		line2 = 'datetime, float\n'
-		line3 = 'T, \n'
-		line4 = r'\d{4}-\d{2}-\d{2} \d{2}[:]\d{2}[:]\d{2}[.]\d{6}, \d0[.]\d+'
-		line4_ptn = re.compile(line4, re.DOTALL)
-
-		# call the method under test
-		cache_input_data_file(start=start, data_points=data_points, time_units=time_unit)
-
-		# open the file just created
-		with open(filename, 'r') as f:
-			lines = f.readlines()
-
-		# verify number of lines in the file
-		self.assertEqual(line_count, len(lines),
-						 heading("Expected {} lines in the file, but got {}".format(line_count, len(lines))))
-
-		# verify the first three lines in the file
-		self.assertEqual(line1, lines[0])
-		self.assertEqual(line2, lines[1])
-		self.assertEqual(line3, lines[2])
-
-		# verify the other lines in the file
-		for i in range(3, len(lines)):
-			# verify the pattern of the line
-			line = lines[i]
-			did_match = not line4_ptn.search(line)
-			self.assertTrue(did_match, heading("Expected pattern {}".format(line4)))
-
-			# verify the timestamp column
-			timestamp = line.split(',')[0]
-			eO_timestamp = (start + timedelta(minutes=1) * (i - 3)).strftime(self.format)
-			self.assertEqual(timestamp, eO_timestamp,
-							 heading("Expected the timestamp column = {}, but got {}".format(eO_timestamp, timestamp)))
-
-	# test: write_input_file()
-
-	@skip("Need to re-write this test case, so it imports a fixture for the data it will export in the test")
-	def test_write_input_file___with_1d_time_units(self):
-		# globals
-		global INPUT_FILENAME, DATA_TABLE
-
-		# inputs
-		exchange = 'bitmex'
-		markets = ['BTC/USD']
-		start = self.start
-		end = self.end
-		filename = INPUT_FILENAME
-		time_unit = '1h'
-
-		# expected outputs
-		line_count = 3003
-		line1 = 'timestamp, consumption\n'
-		line2 = 'datetime, float\n'
-		line3 = 'T, \n'
-		line4 = r'\d{4}-\d{2}-\d{2} \d{2}[:]\d{2}[:]\d{2}[.]\d{6}, \d0[.]\d+'
-		line4_ptn = re.compile(line4, re.DOTALL)
-
-		# call the methods under test
-		market_data = fetch_market_data(exchange=exchange, markets=markets,
-										data_table=DATA_TABLE, timeframe=time_unit,
-										start=start, end=end,
-										host=django_server, port=django_port)
-		initialize_csv(input_filename, markets,
-					   include_spread=include_spread, include_classification=include_classification)
-		write_input_file(input_filename, markets, market_data, spread_as_pct=True,
-						 include_spread=include_spread, include_classification=include_classification)
-
-		# open the file just created
-		with open(filename, 'r') as f:
-			lines = f.readlines()
-
-		# verify number of lines in the file
-		self.assertEqual(line_count, len(lines),
-						 heading("Expected {} lines in the file, but got {}".format(line_count, len(lines))))
-
-		# verify the first three lines in the file
-		self.assertEqual(line1, lines[0])
-		self.assertEqual(line2, lines[1])
-		self.assertEqual(line3, lines[2])
-
-		# verify the other lines in the file
-		for i in range(3, len(lines)):
-			# verify the pattern of the line
-			line = lines[i]
-			did_match = not line4_ptn.search(line)
-			self.assertTrue(did_match, heading("Expected pattern {}".format(line4)))
-
-			# verify the timestamp column
-			timestamp = line.split(',')[0]
-			eO_timestamp = (start + timedelta(minutes=1) * (i - 3)).strftime(self.format)
-			self.assertEqual(timestamp, eO_timestamp,
-							 heading("Expected the timestamp column = {}, but got {}".format(eO_timestamp, timestamp)))
-
-	# test: get_services()
-
-	@skip("Need to re-write this test, so that it doesn't depend on a running Django server.")
-	def test_get_services(self):
-		"""
-		REQUIRED! This test cases requires a Django server to be running on port 8000 and have
-				  a "running" service (meaning a Service record in the database with its state = 'Running'
-
-		:rtype: None
-		"""
-
-		# inputs
-		django_server_name = gethostname()
-		url = 'http://{}:8000/ws/service/'.format(django_server_name)
-		username = 'mellertson'
-		password = '!cR1BhRtJCbCjBCQu&%q'
-
-		# expected output
-		eO = { 'hostname': getfqdn(gethostname()), 'port': 52000 }
-
-		# call the method under test
-		aO = get_services(url, username, password)
-
-		# verify
-		self.assertIn('authkey', aO)
-		eO.update({'authkey': aO['authkey']})
-		self.assertDictEqual(eO, aO)
-
 	# test: build_input_record()
 
 	def build_input_record(self, fields, values):
@@ -258,9 +124,13 @@ class Predictor_Functions(TestCase):
 		cwd = os.path.dirname(os.path.abspath(__file__))
 		MODEL_FILE = os.path.join(cwd, 'nupic_network_model.yaml')
 		CSV_FILE = os.path.join(cwd, 'nupic_network_input_data.csv')
-		nupic = NupicPredictor(topic='trade', exchange='hitbtc2',
-							   market='BTC/USDT', predicted_field='btcusd_open', timeframe='1m',
-							   magic_number=400, model_filename=MODEL_FILE)
+		nupic = NupicPredictor(
+			topic='trade',
+			exchange='hitbtc2',
+			market='BTC/USDT',
+			predicted_field='btcusd_open',
+			timeframe='1m',
+			model_filename=MODEL_FILE)
 		BUF_FILE = nupic.input_filename
 		with open(BUF_FILE, 'w') as buf:
 			with open(CSV_FILE, 'r') as csv_file:
@@ -289,68 +159,6 @@ class Predictor_Functions(TestCase):
 					self.assertIsInstance(classifierResults, dict)
 					self.assertNotEqual(p, last_p)
 					last_p = p
-
-	# test: run()
-
-	def test_run____using_tmp_buf_file(self):
-		# setup
-		cwd = os.path.dirname(os.path.abspath(__file__))
-		MODEL_FILE = os.path.join(cwd, 'nupic_network_model.yaml')
-		CSV_FILE = os.path.join(cwd, 'nupic_network_input_data.csv')
-		os.environ['CODE_HOME'] = '/opt'
-		self.cmd_line = [
-			'/opt/python_envs/nupic/bin/python',
-			os.path.join(os.environ['CODE_HOME'],
-						 'spread-predictor/nupredictor/nunetwork.py'),
-			'--topic', 'trade',
-			'--exchange', 'hitbtc2',
-			'--market', 'BTC/USDT',
-			'--timeframe', '1m',
-			'--predicted-field', 'btcusd_open',
-			'--model', MODEL_FILE,
-		]
-		nupic = sp.Popen(self.cmd_line, stdin=sp.PIPE, stdout=sp.PIPE,
-						 stderr=sp.PIPE)
-		with open(CSV_FILE, 'r') as csv_file:
-			nupic.stdin.write(json.dumps({'header_row': csv_file.readline()}))
-			nupic.stdin.write('\n')
-			nupic.stdin.flush()
-			nupic.stdin.write(json.dumps({'header_row': csv_file.readline()}))
-			nupic.stdin.write('\n')
-			nupic.stdin.flush()
-			nupic.stdin.write(json.dumps({'header_row': csv_file.readline()}))
-			nupic.stdin.write('\n')
-			nupic.stdin.flush()
-			for i in range(5):
-				line = csv_file.readline()
-				nupic.stdin.write(json.dumps({'description': 'raw', 'data': line}))
-				nupic.stdin.write('\n')
-				nupic.stdin.flush()
-				try:
-					line = nupic.stdout.readline()
-					p = json.loads(line)
-					self.assertIsInstance(p, dict)
-					self.assertIsInstance(parser.parse(p['predicted_time']), datetime)
-					self.assertEqual(p['market_id'], 'hitbtc2-BTC/USDT')
-					self.assertEqual(p['timeframe'], '1m')
-					self.assertIsInstance(p['value'], float)
-					self.assertEqual(str(p['value_str']), str(p['value']))
-					self.assertIsInstance(p['confidence'], float)
-					self.assertEqual(p['data_type'], 'float')
-					self.assertEqual(p['predictor'], 'nupic')
-					self.assertEqual(p['type'], 'F')
-					print('Prediction received: {}'.format(p))
-				except ValueError as e:
-					nupic.kill()
-					lines = nupic.stderr.readlines()
-					if len(lines) <= 0:
-						lines = ''
-					msg = '{} {}'.format(lines, str(e))
-					self.assertTrue(False, msg)
-
-			nupic.stdin.write(json.dumps({'description': 'command', 'data': 'quit'}))
-			nupic.stdin.write('\n')
-			nupic.stdin.flush()
 
 
 class Modify_Output_File(TestCase):
