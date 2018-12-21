@@ -386,3 +386,4 @@ class NupicPredictor_Tests(TestCase):
 
 
 
+

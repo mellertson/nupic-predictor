@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import re
 import json
-import os, errno, shutil
+import os, errno, shutil, logging
 import sys
 import yaml
 import requests
@@ -43,6 +43,10 @@ __all__ = [
 	'enableLearning',
 	'disableLearning',
 
+	# loggin functions
+	'enable_logging',
+	'disable_logging',
+
 	# classes
 	'Prediction',
 	'DateTimeUtils',
@@ -50,6 +54,31 @@ __all__ = [
 	'NupicPredictor',
 ]
 
+
+LOG_DIR = os.path.dirname(os.path.abspath(__file__))
+DEBUG_FILE = 'nupic.log'
+log = logging.getLogger('nupic_predictor')
+log.setLevel(logging.DEBUG)
+
+# create file handler which logs even debug messages
+fh = logging.FileHandler(os.path.join(LOG_DIR, DEBUG_FILE))
+fh.setLevel(logging.DEBUG)
+
+# create formatter and add it to the handlers
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+fh.setFormatter(formatter)
+
+# add the handlers to logger
+log.addHandler(fh)
+
+
+def enable_logging():
+	log.propagate = True
+	log.disabled = False
+
+def disable_logging():
+	log.propagate = False
+	log.disabled = True
 
 def error_log_stack(e):
 	"""
@@ -61,6 +90,8 @@ def error_log_stack(e):
 
 	ss = traceback.extract_tb(sys.exc_info()[2])
 	stack = traceback.format_list(ss)
+	log.error(stack)
+	log.error('Exception: {}'.format(e))
 	sys.stderr.writelines(stack)
 	sys.stderr.writelines([''])
 	sys.stderr.writelines(['Exception: {}'.format(e)])
@@ -137,16 +168,27 @@ class Prediction(dict):
 	def __init__(self, time_predicted, exchange, market, timeframe,
 				 prediction_type, prediction, confidence, actual, pct_error, anomaly_score):
 		super(Prediction, self).__init__()
-		self['time_predicted'] = time_predicted
-		self['exchange'] = exchange
-		self['market'] = market
-		self['timeframe'] = timeframe
-		self['prediction_type'] = prediction_type
-		self['prediction'] = prediction
-		self['confidence'] = confidence
-		self['actual'] = actual
-		self['pct_error'] = pct_error
-		self['anomaly_score'] = anomaly_score
+		log.debug('Constructing a prediction:')
+		log.debug('\ttime_predicted: {}'.format(time_predicted))
+		log.debug('\texchange: {}'.format(exchange))
+		log.debug('\tmarket: {}'.format(market))
+		log.debug('\ttimeframe: {}'.format(timeframe))
+		log.debug('\tprediction_type: {}'.format(prediction_type))
+		log.debug('\tprediction: {}'.format(prediction))
+		log.debug('\tconfidence: {}'.format(confidence))
+		log.debug('\tactual: {}'.format(actual))
+		log.debug('\tpct_error: {}'.format(pct_error))
+		log.debug('\tanomaly_score: {}'.format(anomaly_score))
+		self['time_predicted'] = str(time_predicted)
+		self['exchange'] = str(exchange)
+		self['market'] = str(market)
+		self['timeframe'] = str(timeframe)
+		self['prediction_type'] = str(prediction_type)
+		self['prediction'] = float(prediction)
+		self['confidence'] = float(confidence)
+		self['actual'] = float(actual)
+		self['pct_error'] = float(pct_error) if pct_error else 0.0
+		self['anomaly_score'] = float(anomaly_score)
 
 
 class bcolors(object):
@@ -788,6 +830,8 @@ class NupicPredictor(t.Thread):
 		self.is_started = t.Event()
 		self.is_started.clear()
 		self.command_queue = mp.Queue()
+		log.debug('Nupic Predictor initialized')
+		log.debug('-' * 100)
 
 	def __del__(self):
 		if not self.input_file.closed:
@@ -971,8 +1015,11 @@ class NupicPredictor(t.Thread):
 		try:
 			# block until the next trade or command is recieved
 			json_data = sys.stdin.readline()
-			data = json.loads(json_data)
-			return data
+			log.debug('data read from stdin: {}'.format(json_data))
+			if len(json_data) > 0:
+				data = json.loads(json_data)
+				return data
+			return {}
 		except EOFError:
 			exit(1)
 
@@ -1037,6 +1084,7 @@ class NupicPredictor(t.Thread):
 		:rtype: str
 		"""
 
+		prediction['predicted_field'] = self.predicted_field
 		prediction_message = JSONMessage.build(
 			JSONMessage.TYPE_PREDICTION_RESULT,
 			prediction)
@@ -1069,6 +1117,7 @@ class NupicPredictor(t.Thread):
 		"""
 
 		json_string = json.dumps(message)
+		log.debug('data written to stdout: {}'.format(json_string))
 		sys.stdout.write(json_string)
 		sys.stdout.write('\n')
 		sys.stdout.flush()
@@ -1081,62 +1130,68 @@ class NupicPredictor(t.Thread):
 			# received on standard input
 			data = self.get_next_data()
 
-			# instantiate and initialize the Nupic network
-			if data['type'] == JSONMessage.TYPE_HEADER:
-				for key, line in data['message'].items():
-					self.write_to_input_file(line)
+			if 'type' in data:
+				# instantiate and initialize the Nupic network
+				if data['type'] == JSONMessage.TYPE_HEADER:
+					for key, line in data['message'].items():
+						self.write_to_input_file(line)
 
-				data_source = FileRecordStream(self.input_filename)
-				self.network = self.create_network(data_source)
-				self.network = self.configure_network(self.network)
-				self.output_message(JSONMessage.build(
-					JSONMessage.TYPE_NET_INITIALIZED,
-					'The Nupic network was successfully initialized')
-				)
+					data_source = FileRecordStream(self.input_filename)
+					self.network = self.create_network(data_source)
+					self.network = self.configure_network(self.network)
+					self.output_message(JSONMessage.build(
+						JSONMessage.TYPE_NET_INITIALIZED,
+						'The Nupic network was successfully initialized')
+					)
 
-			# make a prediction
-			elif data['type'] in ['predict-and-learn', JSONMessage.TYPE_PREDICT]:
-				self.write_to_input_file(data['message']['row'])
+				# make a prediction
+				elif data['type'] in ['predict-and-learn', JSONMessage.TYPE_PREDICT]:
+					self.write_to_input_file(data['message']['row'])
 
-				# turn on learning
-				if data['type'] == 'predict-and-learn':
+					# turn on learning
+					if data['type'] == 'predict-and-learn':
+						enableLearning(self.network)
+
+					# turn off learning
+					elif data['type'] == JSONMessage.TYPE_PREDICT:
+						disableLearning(self.network)
+
+					# make and return the prediction
+					p = self.get_next_prediction(self.network, data)
+					log.debug('Nupic made prediction = {}'.format(p))
+					self.output_prediction(p)
+
+				# just train the network
+				elif data['type'] == JSONMessage.TYPE_TRAIN_NUPIC:
+					self.write_to_input_file(data['message']['row'])
 					enableLearning(self.network)
+					self.train(self.network)
+					self.output_training_confirmation()
 
-				# turn off learning
-				elif data['type'] == JSONMessage.TYPE_PREDICT:
-					disableLearning(self.network)
+				# write "raw" data to input file without a
+				# newline character and make a prediction
+				elif data['type'] == 'raw':
+					self.write_to_input_file(data['row'], append_newline=False)
+					p = Prediction(
+						time_predicted=str(datetime.now(tz=pytz.UTC)),
+						exchange=self.exchange_id,
+						market=self.symbol,
+						timeframe=self.timeframe,
+						prediction_type='F',
+						prediction=1000.0,
+						confidence=1.0,
+						actual=None,
+						pct_error=0.0,
+						anomaly_score=None)
+					self.output_prediction(p)
 
-				# make and return the prediction
-				p = self.get_next_prediction(self.network, data)
-				self.output_prediction(p)
-
-			# just train the network
-			elif data['type'] == JSONMessage.TYPE_TRAIN_NUPIC:
-				self.write_to_input_file(data['message']['row'])
-				enableLearning(self.network)
-				self.train(self.network)
-				self.output_training_confirmation()
-
-			# write "raw" data to input file without a
-			# newline character and make a prediction
-			elif data['type'] == 'raw':
-				self.write_to_input_file(data['row'], append_newline=False)
-				p = Prediction(
-					time_predicted=str(datetime.now(tz=pytz.UTC)),
-					exchange=self.exchange_id,
-					market=self.symbol,
-					timeframe=self.timeframe,
-					prediction_type='F',
-					prediction=1000.0,
-					confidence=1.0,
-					actual=None,
-					pct_error=0.0,
-					anomaly_score=None)
-				self.output_prediction(p)
-
-			# shut down the predictor
-			elif data['type'] == JSONMessage.TYPE_QUIT:
-				exit(0)
+				# shut down the predictor
+				elif data['type'] == JSONMessage.TYPE_QUIT:
+					exit(0)
+			else:
+				log.error('''"type" key not found in data''')
+				log.error('''---> data = {}'''.format(data))
+				exit(1)
 
 	def run(self):
 		"""
