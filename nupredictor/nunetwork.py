@@ -179,6 +179,7 @@ class Prediction(dict):
 		log.debug('\tactual: {}'.format(actual))
 		log.debug('\tpct_error: {}'.format(pct_error))
 		log.debug('\tanomaly_score: {}'.format(anomaly_score))
+
 		self['time_predicted'] = str(time_predicted)
 		self['exchange'] = str(exchange)
 		self['market'] = str(market)
@@ -1163,6 +1164,7 @@ class NupicPredictor(t.Thread):
 
 				# just train the network
 				elif data['type'] == JSONMessage.TYPE_TRAIN_NUPIC:
+					log.debug('Training Nupic with: {}'.format(data['message']['row']))
 					self.write_to_input_file(data['message']['row'])
 					enableLearning(self.network)
 					self.train(self.network)
