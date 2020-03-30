@@ -92,7 +92,8 @@ def error_log_stack(e):
 	stack = traceback.format_list(ss)
 	log.error(stack)
 	log.error('Exception: {}'.format(e))
-	sys.stderr.writelines(stack)
+	for line in stack:
+		sys.stderr.writelines(line + '\n')
 	sys.stderr.writelines([''])
 	sys.stderr.writelines(['Exception: {}'.format(e)])
 
@@ -785,14 +786,18 @@ class NupicPredictor(t.Thread):
 	:type predicted_field: str
 	"""
 
-	def __init__(self, topic=None, exchange=None, market=None,
-				 predicted_field=None, timeframe=None,
+	def __init__(self, topic='trade', exchange='bittrex', market='btc/usd',
+				 predicted_field=None, timeframe='1m',
 				 parse_args=False, model_filename=None):
 		super(NupicPredictor, self).__init__(
 			target=self.run, name='NupicPredictor.run')
 		self.network = None
 		if parse_args:
 			self.options = self.parse_options()[0]
+			self.options.topic = topic
+			self.options.exchange = exchange
+			self.options.market = market
+			self.options.timeframe = timeframe
 		else:
 			self.options = self
 			self.options.topic = topic

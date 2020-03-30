@@ -125,11 +125,7 @@ class Predictor_Functions(TestCase):
 		MODEL_FILE = os.path.join(cwd, 'nupic_network_model.yaml')
 		CSV_FILE = os.path.join(cwd, 'nupic_network_input_data.csv')
 		nupic = NupicPredictor(
-			topic='trade',
-			exchange='hitbtc2',
-			market='BTC/USDT',
 			predicted_field='btcusd_open',
-			timeframe='1m',
 			model_filename=MODEL_FILE)
 		BUF_FILE = nupic.input_filename
 		with open(BUF_FILE, 'w') as buf:
@@ -209,11 +205,7 @@ class NupicPredictor_Tests(TestCase):
 		self.timeframe = '1m'
 		self.model_filename = 'nupic_network_model.yaml'
 		self.predictor = NupicPredictor(
-			topic=self.topic,
-			exchange=self.exchange_id,
-			market=self.market,
 			predicted_field=self.predicted_field,
-			timeframe=self.timeframe,
 			model_filename=self.model_filename)
 
 		# mock
@@ -249,16 +241,11 @@ class NupicPredictor_Tests(TestCase):
 
 		# test
 		p = NupicPredictor(
-			topic=self.topic,
-			exchange=self.exchange_id,
-			market=self.market,
 			predicted_field=self.predicted_field,
-			timeframe=self.timeframe,
 			model_filename=self.model_filename)
 		input_filename = '/tmp/{}-500.csv'.format(p.name)
 
 		# verify
-		self.assertEqual(self.topic, p.topic)
 		self.assertEqual(self.exchange_id, p.options.exchange_id)
 		self.assertEqual(self.exchange_id, p.exchange_id)
 		self.assertEqual(self.market, p.symbol)
@@ -277,7 +264,6 @@ class NupicPredictor_Tests(TestCase):
 	# test: predictor_thread()
 
 	def test_predictor_thread____send_header_message(self):
-		# HIGH: pipe header row as JSON to stdin
 		# test: send header row to the predictor
 		msg = JSONMessage.build(JSONMessage.TYPE_HEADER, {
 			'row1': "timestamp, btcusd_open, btcusd_high, btcusd_low, btcusd_close, btcusd_volume, btcusd_lastSize",
@@ -319,7 +305,8 @@ class NupicPredictor_Tests(TestCase):
 				'row':'2018-06-10 22:58:00.000000,6702.0,6709.0,6693.0,6708.5,5802146.0,800.0',
 				'timestamp': '2018-06-10 22:58:00.000000',
 			})
-		self.to_queue.put(json.dumps(msg))
+		json_msg = json.dumps(msg)
+		self.to_queue.put(json_msg)
 
 		# verify
 		try:
@@ -333,14 +320,13 @@ class NupicPredictor_Tests(TestCase):
 		self.assertEqual(1, m_dlearn.call_count)
 		self.assertEqual(0, m_elearn.call_count)
 
-	# @mock.patch(target='nupredictor.nunetwork.enableLearning')
-	# @mock.patch(target='nupredictor.nunetwork.disableLearning')
-	def test_predictor_thread____send_training_message(self): # , m_dlearn, m_elearn):
-		# HIGH: pipe train messages as JSON into stdin
+	@mock.patch(target='nupredictor.nunetwork.enableLearning')
+	@mock.patch(target='nupredictor.nunetwork.disableLearning')
+	def test_predictor_thread____send_training_message(self, m_dlearn, m_elearn):
 		# setup
 		self.test_predictor_thread____send_header_message()
-		# m_dlearn.side_effect = self.disable_learning
-		# m_elearn.side_effect = self.enable_learning
+		m_dlearn.side_effect = self.disable_learning
+		m_elearn.side_effect = self.enable_learning
 
 		# test: send "train Nupic" message
 		msg = JSONMessage.build(
@@ -358,8 +344,8 @@ class NupicPredictor_Tests(TestCase):
 			self.assertTrue(False, 'timed out waiting for the prediction')
 		self.assertIn('type', msg)
 		self.assertEqual(JSONMessage.TYPE_TRAIN_CONFIRMATION, msg['type'])
-		# self.assertEqual(0, m_dlearn.call_count)
-		# self.assertEqual(1, m_elearn.call_count)
+		self.assertEqual(0, m_dlearn.call_count)
+		self.assertEqual(1, m_elearn.call_count)
 
 
 
