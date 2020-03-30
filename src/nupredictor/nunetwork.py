@@ -891,30 +891,6 @@ class NupicPredictor(t.Thread):
 
 		# Set the encoder and data source of the sensor region.
 		sensorRegion = network.regions["sensor"].getSelf()
-
-		# HIGH: create factory methods to construct encoders from input data
-		# HIGH: create a dict describing input data. e.g.
-		# {
-		# 	'dateTime': dict(fieldname='dateTime',
-		# 					type='DateEncoder',
-		# 					timeOfDay=(5, 5)),
-		# 	'attendeeCount': dict(fieldname='attendeeCount',
-		# 						type='ScalarEncoder',
-		# 						name='attendeeCount',
-		# 						minval=0,
-		# 						maxval=250,
-		# 						clipInput=True,
-		# 						w=5,
-		# 						resolution=10),
-		# 	'consumption': dict(fieldname='consumption',
-		# 						type='ScalarEncoder',
-		# 						name='consumption',
-		# 						minval=0,
-		# 						maxval=110,
-		# 						clipInput=True,
-		# 						w=5,
-		# 						resolution=5),
-		# }
 		sensorRegion.encoder = createEncoder(modelParams["sensorParams"]["encoders"])
 		sensorRegion.dataSource = data_source
 
@@ -1242,17 +1218,3 @@ class NupicPredictor(t.Thread):
 if __name__ == "__main__":
 	predictor = NupicPredictor(parse_args=True)
 	predictor.run()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
