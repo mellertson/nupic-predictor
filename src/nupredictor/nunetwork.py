@@ -820,14 +820,8 @@ class NupicPredictor(t.Thread):
 		self.predicted_field = self.options.predicted_field
 		self.timeframe = self.options.timeframe
 		self.timeframe_td = DateTimeUtils.string_to_timeframe(self.timeframe)
-		self.name = '{}-{}-{}-{}-{}'.format(
-			self.topic,
-			self.exchange_id,
-			self.symbol_fixed,
-			self.predicted_field,
-			self.timeframe)
 		self.input_filename = '/tmp/{}-{}.csv'.format(
-			random.randint(1, 999999999), self.name)
+			self.name, random.randint(1, 999999999))
 		self.input_file = open(self.input_filename, 'w+')
 		self.is_started = t.Event()
 		self.is_started.clear()
@@ -847,6 +841,10 @@ class NupicPredictor(t.Thread):
 	def __repr__(self):
 		return self.__str__()
 
+	@property
+	def name(self):
+		return 'nunetwork'
+
 	def build_dir(self, filename):
 		return os.path.join(self.dir, filename)
 
@@ -858,26 +856,13 @@ class NupicPredictor(t.Thread):
 		:rtype: tuple
 		"""
 
-		usage = "usage: $prog [options]"
+		usage = "usage: nunetwork.py [options]\n\n"
 		parser = OptionParser(usage)
-		parser.add_option('-x', '--exchange', dest='exchange',
-			default='hitbtc2',
-			help='the exchange ID, e.g. "hitbtc2" or "bittrex".')
-		parser.add_option('-m', "--market", dest="market",
-			default="BTC/USD",
-			help='a standardized market symbol (default = "BTC/USD")')
-		parser.add_option('-t', "--timeframe", dest="timeframe",
-			default='1m',
-			help='the time units, either: "1m", "5m", "1h", "1d" (default = "1m")')
+
 		parser.add_option('-P', "--predicted-field", dest="predicted_field",
-			default='btcusd_high',
-			help="""the field name that will be predicted, 
-			e.g. 'btcusd_high' | 'btcusd_low' (default = "btcusd_high")""")
-		parser.add_option('--topic', dest='topic',
-			default='trade',
-			help="The subscription topic of the data which will be sent to Nupic")
+			help="""The fieldname, which should be predicted.""")
 		parser.add_option('--model', dest='model',
-			default='nupic_predict_buys_sells_model.yaml')
+			help="""The Nupic model filename (must be fully qualified).""")
 
 		(options, args) = parser.parse_args()
 		return options, args
@@ -906,6 +891,30 @@ class NupicPredictor(t.Thread):
 
 		# Set the encoder and data source of the sensor region.
 		sensorRegion = network.regions["sensor"].getSelf()
+
+		# HIGH: create factory methods to construct encoders from input data
+		# HIGH: create a dict describing input data. e.g.
+		# {
+		# 	'dateTime': dict(fieldname='dateTime',
+		# 					type='DateEncoder',
+		# 					timeOfDay=(5, 5)),
+		# 	'attendeeCount': dict(fieldname='attendeeCount',
+		# 						type='ScalarEncoder',
+		# 						name='attendeeCount',
+		# 						minval=0,
+		# 						maxval=250,
+		# 						clipInput=True,
+		# 						w=5,
+		# 						resolution=10),
+		# 	'consumption': dict(fieldname='consumption',
+		# 						type='ScalarEncoder',
+		# 						name='consumption',
+		# 						minval=0,
+		# 						maxval=110,
+		# 						clipInput=True,
+		# 						w=5,
+		# 						resolution=5),
+		# }
 		sensorRegion.encoder = createEncoder(modelParams["sensorParams"]["encoders"])
 		sensorRegion.dataSource = data_source
 
@@ -1009,7 +1018,7 @@ class NupicPredictor(t.Thread):
 
 	def get_next_data(self):
 		"""
-		Read next data point from standard input
+		Read JSON from standard input as next data point
 
 		:rtype:  dict
 		"""
@@ -1022,6 +1031,8 @@ class NupicPredictor(t.Thread):
 				data = json.loads(json_data)
 				return data
 			return {}
+		except ValueError as e:
+			log.error(str(e))
 		except EOFError:
 			exit(1)
 
@@ -1216,11 +1227,21 @@ class NupicPredictor(t.Thread):
 			error_log_stack(e)
 			raise e
 
+	def desired_output(self, x, r, l=0.0, m=0.5, h=1.0):
+		if x < m:
+			s = abs(m - l)
+			o = l + s * r
+			y = o
+		else:
+			s = abs(h - m)
+			o = m + s * r
+			y = o
+		return y
+
 
 if __name__ == "__main__":
 	predictor = NupicPredictor(parse_args=True)
-	predictor.start()
-	predictor.join()
+	predictor.run()
 
 
 

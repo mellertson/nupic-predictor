@@ -255,7 +255,7 @@ class NupicPredictor_Tests(TestCase):
 			predicted_field=self.predicted_field,
 			timeframe=self.timeframe,
 			model_filename=self.model_filename)
-		input_filename = '/tmp/500-{}.csv'.format(p.name)
+		input_filename = '/tmp/{}-500.csv'.format(p.name)
 
 		# verify
 		self.assertEqual(self.topic, p.topic)
@@ -277,6 +277,7 @@ class NupicPredictor_Tests(TestCase):
 	# test: predictor_thread()
 
 	def test_predictor_thread____send_header_message(self):
+		# HIGH: pipe header row as JSON to stdin
 		# test: send header row to the predictor
 		msg = JSONMessage.build(JSONMessage.TYPE_HEADER, {
 			'row1': "timestamp, btcusd_open, btcusd_high, btcusd_low, btcusd_close, btcusd_volume, btcusd_lastSize",
@@ -305,6 +306,7 @@ class NupicPredictor_Tests(TestCase):
 	@mock.patch(target='nupredictor.nunetwork.enableLearning')
 	@mock.patch(target='nupredictor.nunetwork.disableLearning')
 	def test_predictor_thread____send_predict_message(self, m_dlearn, m_elearn):
+		# HIGH: pipe predict messages as JSON into stdin
 		# setup
 		self.test_predictor_thread____send_header_message()
 		m_dlearn.side_effect = self.disable_learning
@@ -331,13 +333,14 @@ class NupicPredictor_Tests(TestCase):
 		self.assertEqual(1, m_dlearn.call_count)
 		self.assertEqual(0, m_elearn.call_count)
 
-	@mock.patch(target='nupredictor.nunetwork.enableLearning')
-	@mock.patch(target='nupredictor.nunetwork.disableLearning')
-	def test_predictor_thread____send_training_message(self, m_dlearn, m_elearn):
+	# @mock.patch(target='nupredictor.nunetwork.enableLearning')
+	# @mock.patch(target='nupredictor.nunetwork.disableLearning')
+	def test_predictor_thread____send_training_message(self): # , m_dlearn, m_elearn):
+		# HIGH: pipe train messages as JSON into stdin
 		# setup
 		self.test_predictor_thread____send_header_message()
-		m_dlearn.side_effect = self.disable_learning
-		m_elearn.side_effect = self.enable_learning
+		# m_dlearn.side_effect = self.disable_learning
+		# m_elearn.side_effect = self.enable_learning
 
 		# test: send "train Nupic" message
 		msg = JSONMessage.build(
@@ -355,8 +358,8 @@ class NupicPredictor_Tests(TestCase):
 			self.assertTrue(False, 'timed out waiting for the prediction')
 		self.assertIn('type', msg)
 		self.assertEqual(JSONMessage.TYPE_TRAIN_CONFIRMATION, msg['type'])
-		self.assertEqual(0, m_dlearn.call_count)
-		self.assertEqual(1, m_elearn.call_count)
+		# self.assertEqual(0, m_dlearn.call_count)
+		# self.assertEqual(1, m_elearn.call_count)
 
 
 
