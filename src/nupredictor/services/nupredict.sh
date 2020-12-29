@@ -5,12 +5,16 @@
 # Required-Start: $all
 # Description: Nupic Predictor (nupredict)
 ### END INIT INFO
-
+SRC_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+SRC_ROOT="$(dirname $SRC_ROOT)"
+SRC_ROOT="$(dirname $SRC_ROOT)" #should set SRC_ROOT to spread-predictor/src
+echo "SRC_ROOT = $SRC_ROOT"
 PID_FILE="/var/run/nupredict.pid"
+NUPIC_USER="spread_predictor"
 
 
 start() {
-   su -c "/opt/predictors/nupic-predictor/nupredictor/services/start_nupredict.sh &" - bamboo
+   su -c "$SRC_ROOT/nupredictor/services/start_nupredict.sh &" - $NUPIC_USER
    echo $!>$PID_FILE
 }
 

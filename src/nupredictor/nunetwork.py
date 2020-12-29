@@ -19,10 +19,12 @@ from optparse import OptionParser
 from nupredictor.functions import get_files
 from nupredictor.utilities import parse_time_units
 from socket import getfqdn, gethostname
+from flask import Flask
 import threading as t
 import multiprocessing as mp
 
 
+app = Flask('nupic_predictor')
 SUBSCRIBED = 1
 UNSUBSCRIBED = 2
 INVALID_REQUEST = 400
@@ -88,14 +90,15 @@ def error_log_stack(e):
 	:type e: Exception
 	"""
 
-	ss = traceback.extract_tb(sys.exc_info()[2])
-	stack = traceback.format_list(ss)
-	log.error(stack)
-	log.error('Exception: {}'.format(e))
-	for line in stack:
-		sys.stderr.writelines(line + '\n')
-	sys.stderr.writelines([''])
-	sys.stderr.writelines(['Exception: {}'.format(e)])
+	# ss = traceback.extract_tb(sys.exc_info()[2])
+	# stack = traceback.format_list(ss)
+	# log.error(stack)
+	# log.error('Exception: {}'.format(e))
+	# for line in stack:
+	# 	sys.stderr.writelines(line + '\n')
+	# sys.stderr.writelines([''])
+	# sys.stderr.writelines(['Exception: {}'.format(e)])
+	log.error(e, exc_info=True)
 
 
 class StopThread(Exception):
@@ -1218,6 +1221,11 @@ class NupicPredictor(t.Thread):
 			o = m + s * r
 			y = o
 		return y
+
+
+@app.route('/')
+def hello_world():
+	return 'Hello from the Nupic Predictor!'
 
 
 if __name__ == "__main__":

@@ -1,3 +1,5 @@
-nupic/
-nupic.vision/
+venv/
 .idea/
+src/debug.log
+src/nupic.log
+*.pyc
