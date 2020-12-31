@@ -1,10 +1,10 @@
 from unittest import TestCase, skip
-import re, os, json, io, sys, subprocess as sp, mock
+import re, os, json, yaml, io, sys, subprocess as sp, mock
 from random import randint
 from datetime import datetime, timedelta
 from time import sleep
 import numpy as np
-import nupic
+import nupic, requests
 from dateutil import parser
 from nupredictor.nunetwork import *
 from nupredictor.functions import get_files
@@ -14,15 +14,17 @@ import threading, logging
 import multiprocessing as mp
 from timeout_wrapper import timeout
 
-logger = logging.getLogger('nupic_predictor')
+logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
 
+MODEL_DIR = os.path.join(os.path.dirname(__file__), )
 
 def heading(msg):
 	header = '\n\n' + '-'*100 + "\n\n"
 	return "{}{}{}".format(header, msg, header)
 
 
+@skip("old NupicPredictor v1 tests")
 class Predictor_Functions(TestCase):
 
 	def setUp(self):
@@ -160,6 +162,7 @@ class Predictor_Functions(TestCase):
 					last_p = p
 
 
+@skip("old NupicPredictor v1 tests")
 class Modify_Output_File(TestCase):
 	""" Test the modify_output_file_permissions function """
 
@@ -271,11 +274,14 @@ class NupicPredictor_Tests(TestCase):
 
 	def test_predictor_thread____send_header_message(self):
 		# test: send header row to the predictor
-		msg = JSONMessage.build(JSONMessage.TYPE_HEADER, {
-			'row1': "timestamp, btcusd_open, btcusd_high, btcusd_low, btcusd_close, btcusd_volume, btcusd_lastSize",
-			'row2': "datetime, float, float, float, float, float, float",
-			'row3': "T,  ,  ,  ,  ,  ,  ",
-		})
+		msg = JSONMessage.build(
+			JSONMessage.TYPE_HEADER,
+			{
+				'row1': "timestamp, btcusd_open, btcusd_high, btcusd_low, btcusd_close, btcusd_volume, btcusd_lastSize",
+				'row2': "datetime, float, float, float, float, float, float",
+				'row3': "T,  ,  ,  ,  ,  ,  ",
+			}
+		)
 		json_msg = json.dumps(msg)
 		self.to_queue.put(json_msg)
 
@@ -298,7 +304,6 @@ class NupicPredictor_Tests(TestCase):
 	@mock.patch(target='nupredictor.nunetwork.enableLearning')
 	@mock.patch(target='nupredictor.nunetwork.disableLearning')
 	def test_predictor_thread____send_predict_message(self, m_dlearn, m_elearn):
-		# HIGH: pipe predict messages as JSON into stdin
 		# setup
 		self.test_predictor_thread____send_header_message()
 		m_dlearn.side_effect = self.disable_learning
@@ -309,7 +314,6 @@ class NupicPredictor_Tests(TestCase):
 			JSONMessage.TYPE_PREDICT,
 			{
 				'row':'2018-06-10 22:58:00.000000,6702.0,6709.0,6693.0,6708.5,5802146.0,800.0',
-				'timestamp': '2018-06-10 22:58:00.000000',
 			})
 		json_msg = json.dumps(msg)
 		self.to_queue.put(json_msg)
@@ -354,8 +358,61 @@ class NupicPredictor_Tests(TestCase):
 		self.assertEqual(1, m_elearn.call_count)
 
 
+class POST_to_new_predictor_endpoint(TestCase):
+	""" POST to /new/predictor/ to create a Nupic predictor model. """
+	exchange = 'bittrex'
+	market = 'btcusd'
+	predicted_field = 'target_value'
+	timeframe = '1m'
+	model_filename = os.path.join(MODEL_DIR, 'model-templatev2.yaml')
+	# model_filename = os.path.join(MODEL_DIR, 'nupic_network_model.yaml')
+	with open(model_filename, 'r') as f:
+		model = yaml.load(f)
 
+	def print_response(self, r):
+		print('POST response: {}'.format(r.text))
+		print('---> type(r.text) == {}'.format(type(r.text)))
 
+	def setUp(self):
+		super(POST_to_new_predictor_endpoint, self).setUp()
+		self.predictor_id = None
+
+	def test_send_POST_requests_in_correct_order(self):
+		self.POST_01_new_predictor()
+		self.POST_02_start_predictor()
+
+	def POST_01_new_predictor(self):
+		payload = {
+			'model': self.model,
+			'exchange': self.exchange,
+			'market': self.market,
+			'predicted_field': self.predicted_field,
+			'timeframe': self.timeframe,
+		}
+		r = requests.post(
+			'http://localhost:5000/new/predictor/',
+			data=json.dumps(payload),
+			headers={'Content-type': 'application/json', 'Accept': 'text/plain'},
+		)
+		self.assertEqual(201, r.status_code)
+		self.print_response(r)
+		data = json.loads(r.text)
+		self.predictor_id = data['predictor']['id']
+
+	def POST_02_start_predictor(self):
+		payload = [
+			'timestamp, spread, target_value',
+			'datetime, float, float',
+			'T,,',
+		]
+		self.assertIsNotNone(self.predictor_id)
+		r = requests.post(
+			'http://localhost:5000/start/predictor/{}/'.format(self.predictor_id),
+			data=json.dumps(payload),
+			headers={'Content-type': 'application/json', 'Accept': 'text/plain'},
+		)
+		self.assertEqual(200, r.status_code, msg=heading(r.text))
+		self.print_response(r)
 
 
 

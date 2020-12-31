@@ -8,7 +8,7 @@ import requests
 import pandas as pd
 import pytz
 import traceback
-import random
+import random, copy
 from subprocess import Popen
 from dateutil import parser, tz
 from datetime import datetime, timedelta
@@ -19,15 +19,9 @@ from optparse import OptionParser
 from nupredictor.functions import get_files
 from nupredictor.utilities import parse_time_units
 from socket import getfqdn, gethostname
-from flask import Flask
+from flask import Flask, request
 import threading as t
 import multiprocessing as mp
-
-
-app = Flask('nupic_predictor')
-SUBSCRIBED = 1
-UNSUBSCRIBED = 2
-INVALID_REQUEST = 400
 
 
 __all__ = [
@@ -45,42 +39,60 @@ __all__ = [
 	'enableLearning',
 	'disableLearning',
 
-	# loggin functions
-	'enable_logging',
-	'disable_logging',
-
 	# classes
 	'Prediction',
 	'DateTimeUtils',
 	'JSONMessage',
 	'NupicPredictor',
+	'NupicPredictorv2',
 ]
 
 
-LOG_DIR = os.path.dirname(os.path.abspath(__file__))
-DEBUG_FILE = 'nupic.log'
-log = logging.getLogger('nupic_predictor')
-log.setLevel(logging.DEBUG)
-
-# create file handler which logs even debug messages
-fh = logging.FileHandler(os.path.join(LOG_DIR, DEBUG_FILE))
-fh.setLevel(logging.DEBUG)
-
-# create formatter and add it to the handlers
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-fh.setFormatter(formatter)
-
-# add the handlers to logger
-log.addHandler(fh)
+app = Flask('nupic_predictor')
+SUBSCRIBED = 1
+UNSUBSCRIBED = 2
+INVALID_REQUEST = 400
 
 
-def enable_logging():
-	log.propagate = True
-	log.disabled = False
+# logger settings
+log = app.logger
 
-def disable_logging():
-	log.propagate = False
-	log.disabled = True
+
+if os.environ.get('DEBUG', True):
+	keys = sorted(os.environ.keys())
+	for k in keys:
+		v = os.environ[k]
+		log.debug('{}={}'.format(k, v))
+
+
+def json_load_byteified(file_handle):
+	return _byteify(
+		json.load(file_handle, object_hook=_byteify),
+		ignore_dicts=True
+	)
+
+def json_loads_byteified(json_text):
+	return _byteify(
+		json.loads(json_text, object_hook=_byteify),
+		ignore_dicts=True
+	)
+
+def _byteify(data, ignore_dicts=False):
+	# if this is a unicode string, return its string representation
+	if isinstance(data, unicode):
+		return data.encode('utf-8')
+	# if this is a list of values, return list of byteified values
+	if isinstance(data, list):
+		return [_byteify(item, ignore_dicts=True) for item in data]
+	# if this is a dictionary, return dictionary of byteified keys and values
+	# but only if we haven't already byteified it
+	if isinstance(data, dict) and not ignore_dicts:
+		return {
+			_byteify(key, ignore_dicts=True): _byteify(value, ignore_dicts=True)
+			for key, value in data.iteritems()
+		}
+	# if it's anything else, return it in its original form
+	return data
 
 def error_log_stack(e):
 	"""
@@ -382,7 +394,7 @@ def fetch_market_data(exchange, markets, data_table, start, end, timeframe,
 				   'timeframe': timeframe}
 
 		# send the HTTP request and decode the JSON response
-		print('Getting data from: ' + base_url)
+		log.debug('Getting data from: ' + base_url)
 		response = requests.get(base_url, params=params1, timeout=60*60)
 		if response.status_code != 200:
 			raise ValueError('No {}-{} data was found between {} and {} for {}'
@@ -621,8 +633,7 @@ def createResetLink(network, sensorRegionName, regionName):
 				 srcOutput="resetOut", destInput="resetIn")
 
 
-def createSensorToClassifierLinks(network, sensorRegionName,
-								  classifierRegionName):
+def createSensorToClassifierLinks(network, sensorRegionName, classifierRegionName):
 	"""Create required links from a sensor region to a classifier region."""
 	network.link(sensorRegionName, classifierRegionName, "UniformLink", "",
 				 srcOutput="bucketIdxOut", destInput="bucketIdxIn")
@@ -630,6 +641,7 @@ def createSensorToClassifierLinks(network, sensorRegionName,
 				 srcOutput="actValueOut", destInput="actValueIn")
 	network.link(sensorRegionName, classifierRegionName, "UniformLink", "",
 				 srcOutput="categoryOut", destInput="categoryIn")
+
 
 def createEncoder(encoderParams):
 	"""Create a multi-encoder from params."""
@@ -639,7 +651,11 @@ def createEncoder(encoderParams):
 
 
 def getPredictionResults(network, clRegionName):
-	"""Get prediction results for all prediction steps."""
+	"""
+	Get all multi-step predictions from a Nupic region.
+
+	:rtype: list of dict
+	"""
 
 	classifierRegion = network.regions[clRegionName]
 	temporalPoolerRegion = network.regions["TM"]
@@ -666,17 +682,19 @@ def getPredictionResults(network, clRegionName):
 
 
 def enableLearning(network):
-	# Enable learning for all regions.
-	network.regions["SP"].setParameter("learningMode", 1)
-	network.regions["TM"].setParameter("learningMode", 1)
-	network.regions["classifier"].setParameter("learningMode", 1)
+	""" Enable learning for all regions in a Nupic network. """
+	network.regions["SP"].setParameter("learningMode", True)
+	network.regions["TM"].setParameter("learningMode", True)
+	for regionName, region in model_params['classifiers'].items():
+		network.regions['regionName'].setParameter('learningMode', True)
 
 
-def disableLearning(network):
-	# Enable learning for all regions.
-	network.regions["SP"].setParameter("learningMode", 0)
-	network.regions["TM"].setParameter("learningMode", 0)
-	network.regions["classifier"].setParameter("learningMode", 0)
+def disableLearning(network, model_params):
+	""" Disable learning for all regions in a Nupic network. """
+	network.regions["SP"].setParameter("learningMode", False)
+	network.regions["TM"].setParameter("learningMode", False)
+	for regionName, region in model_params['classifiers'].items():
+		network.regions['regionName'].setParameter('learningMode', False)
 
 
 def store_prediction(url, username, password, action, prediction):
@@ -745,10 +763,15 @@ def get_start_end_dates(time_units):
 	return { 'start':start, 'end':end }
 
 
+def constructor(loader, node):
+	return node.value
+
+
 class JSONMessage(object):
 	TYPE_HEADER = 'header-row'
 	TYPE_NET_INITIALIZED = 'network-initialized'
 	TYPE_PREDICT = 'predict'
+	TYPE_PREDICT_N_LEARN = 'predict-and-learn'
 	TYPE_PREDICTION_RESULT = 'prediction-result'
 	TYPE_TRAIN_NUPIC = 'train-Nupic'
 	TYPE_TRAIN_CONFIRMATION = 'training-confirmation'
@@ -772,7 +795,6 @@ class JSONMessage(object):
 				}
 		:rtype: dict
 		"""
-
 		return {'type': message_type, 'message': message}
 
 
@@ -791,19 +813,18 @@ class NupicPredictor(t.Thread):
 
 	def __init__(self, topic='trade', exchange='bittrex', market='btc/usd',
 				 predicted_field=None, timeframe='1m',
-				 parse_args=False, model_filename=None):
+				 parse_args=False, model_filename=None, model_identity=None):
 		super(NupicPredictor, self).__init__(
 			target=self.run, name='NupicPredictor.run')
 		self.network = None
+		self.model_identity = model_identity
 		if parse_args:
 			self.options = self.parse_options()[0]
-			self.options.topic = topic
 			self.options.exchange = exchange
 			self.options.market = market
 			self.options.timeframe = timeframe
 		else:
 			self.options = self
-			self.options.topic = topic
 			self.options.exchange = exchange
 			self.options.market = market
 			self.options.predicted_field = predicted_field
@@ -821,7 +842,6 @@ class NupicPredictor(t.Thread):
 			os.path.join(self.dir, 'model_input_files'),
 			self.model_filename)
 		self.results_fqfn = self.build_dir('results.csv')
-		self.topic = self.options.topic
 		self.exchange_id = self.options.exchange
 		self.symbol = self.options.market
 		self.symbol_fixed = self.options.market.replace('/', '')
@@ -840,7 +860,7 @@ class NupicPredictor(t.Thread):
 	def __del__(self):
 		if not self.input_file.closed:
 			self.input_file.close()
-		print('Input file closed: {}'.format(self.input_filename))
+		log.debug('Input file closed: {}'.format(self.input_filename))
 		Popen(['rm', '{}'.format(self.input_filename)])
 
 	def __str__(self):
@@ -1223,11 +1243,636 @@ class NupicPredictor(t.Thread):
 		return y
 
 
+class NupicPredictorv2(t.Thread):
+	"""
+	A predictor which constructs and uses a Nupic model
+
+	:ivar network:
+		The Nupic network (the model)
+	:type network: nupic.engine.Network
+	:ivar predicted_field:
+			The "fieldname", identified in the model parameters file,
+			which will be predicted, e.g. "spread" or "m1_ask"
+	:type predicted_field: str
+	"""
+
+	def __init__(self, exchange='bittrex', market='btc/usd',
+				 predicted_field=None, timeframe='1m',
+				 parse_args=False, model_filename=None, model_identity=None):
+		super(NupicPredictorv2, self).__init__(
+			target=self.run, name='NupicPredictor.run')
+		self.network = None
+		self.model_identity = model_identity
+		if parse_args:
+			self.options = self.parse_options()[0]
+			self.options.exchange = exchange
+			self.options.market = market
+			self.options.timeframe = timeframe
+		else:
+			self.options = self
+			self.options.exchange = exchange
+			self.options.market = market
+			self.options.predicted_field = predicted_field
+			self.options.timeframe = timeframe
+			self.options.model = model_filename
+		self.models_dir = 'model_input_files'
+		if self.options.model:
+			self.model_filename = self.options.model
+		else:
+			self.model_filename = 'nupic_predict_buys_sells_model.yaml'
+		self.dir = os.environ.get('NUPIC_MODEL_DIR')
+		self.model_fqfn = os.path.join(
+			os.path.join(self.dir, 'model_input_files'),
+			self.model_filename)
+		self.results_fqfn = self.build_dir('results.csv')
+		self.exchange_id = self.options.exchange
+		self.symbol = self.options.market
+		self.symbol_fixed = self.options.market.replace('/', '')
+		self.predicted_field = self.options.predicted_field
+		self.timeframe = self.options.timeframe
+		self.timeframe_td = DateTimeUtils.string_to_timeframe(self.timeframe)
+		self.input_filename = '/tmp/{}-{}.csv'.format(
+			self.name, random.randint(1, 999999999))
+		self.input_file = open(self.input_filename, 'w+')
+		self.is_started = t.Event()
+		self.is_started.clear()
+		self.command_queue = mp.Queue()
+		self.output_msg_queue = mp.Queue()
+		log.debug('Nupic Predictor initialized')
+		log.debug('-' * 100)
+		self.model_params = {}
+		self.state_lock = t.Lock()
+		self._state = 'stopped'
+
+	def __del__(self):
+		if not self.input_file.closed:
+			self.input_file.close()
+		log.debug('Input file closed: {}'.format(self.input_filename))
+		Popen(['rm', '{}'.format(self.input_filename)])
+
+	def __str__(self):
+		return self.model_identity
+
+	def __repr__(self):
+		return 'NupicPredictorV2({})'.format(self.model_identity)
+
+	@property
+	def state(self):
+		_state = None
+		self.state_lock.acquire()
+		_state = copy.deepcopy(self._state)
+		self.state_lock.release()
+		return _state
+
+	@state.setter
+	def state(self, new_state):
+		self.state_lock.acquire()
+		self._state = copy.deepcopy(new_state)
+		self.state_lock.release()
+		return new_state
+
+	@property
+	def model_name(self):
+		return '{}({})'.format(
+			self.__class__.__name__,
+			self.model_identity,
+		)
+
+	@property
+	def is_running(self):
+		if self.state == 'stopped':
+			return False
+		else:
+			return True
+
+	def build_dir(self, filename):
+		return os.path.join(self.dir, filename)
+
+	def parse_options(self):
+		"""
+		Parse command line options and return them
+
+		:returns: (options, args)
+		:rtype: tuple
+		"""
+
+		usage = "usage: nunetwork.py [options]\n\n"
+		parser = OptionParser(usage)
+
+		parser.add_option('-P', "--predicted-field", dest="predicted_field",
+			help="""The fieldname, which should be predicted.""")
+		parser.add_option('--model', dest='model',
+			help="""The Nupic model filename (must be fully qualified).""")
+
+		(options, args) = parser.parse_args()
+		return options, args
+
+	def create_network(self, data_source):
+		"""
+		Create and initialize the Nupic network (a.k.a. model)
+
+		:param data_source: The input data source for the Nupic model
+		:type data_source: FileRecordStream
+
+		:returns: A fully initialized Nupic network (a.k.a. model)
+		:rtype: nupic.engine.Network
+		"""
+
+		log.debug('opening Nupic model file: {}'.format(self.model_fqfn))
+		with open(self.model_fqfn, "r") as f:
+			# yaml.SafeLoader.add_constructor("tag:yaml.org,2002:python/unicode", constructor)
+			modelParams = yaml.safe_load(f)
+			log.debug('loading Nupic model from YAML file: {}'.format(modelParams))
+			modelParams = modelParams["modelParams"]
+			log.debug('Nupic model params loaded: {}'.format(modelParams))
+			self.model_params = modelParams
+
+		# Create a network that will hold the regions
+		network = Network()
+
+		################################################################################
+		# Add sensor regions
+		################################################################################
+		# Set the encoder and data source of the sensor region.
+		log.debug('adding "sensor" region to Nupic network')
+		sensorRegion = network.addRegion("sensor", "py.RecordSensor", '{}')
+		sensorRegion.getSelf().encoder = createEncoder(modelParams["sensorParams"]["encoders"])
+		sensorRegion.getSelf().dataSource = data_source
+
+		################################################################################
+		# Synchronize Sensor Region output width with Spatial Pooler input width
+		################################################################################
+		log.debug('synchronizing input width to Nupic model')
+		modelParams["spParams"]["inputWidth"] = sensorRegion.getSelf().encoder.getWidth()
+
+		################################################################################
+		# Add SpacialPooling and TemporalMemory regions
+		################################################################################
+		network.addRegion("SP", "py.SPRegion", json.dumps(modelParams["spParams"]))
+		network.addRegion("TM", "py.TMRegion", json.dumps(modelParams["tmParams"]))
+
+		################################################################################
+		# Classifier Regions
+		################################################################################
+		for regionName, region in modelParams['classifiers'].items():
+			# Add the classifier region
+			regionType = "py.%s" % region.pop("regionType")
+			network.addRegion(regionName, regionType, json.dumps(region))
+
+		################################################################################
+		# Link the Regions
+		################################################################################
+		for regionName, region in modelParams['classifiers'].items():
+			createSensorToClassifierLinks(network, "sensor", regionName)
+		createDataOutLink(network, "sensor", "SP")
+		createFeedForwardLink(network, "SP", "TM")
+		for regionName, region in modelParams['classifiers'].items():
+			createFeedForwardLink(network, "TM", regionName)
+		# Reset links are optional, since the sensor region does not send resets
+		createResetLink(network, "sensor", "SP")
+		createResetLink(network, "sensor", "TM")
+
+		################################################################################
+		# Initialize the Network
+		################################################################################
+		network.initialize()
+
+		return network
+
+	def post_initialization(self, network):
+		"""
+		Do post initialization of the Nupic network with learning disabled.
+
+		Does the following:
+		  - sets the "predicted field" found in the data source
+		  - turns off "learning mode" for all regions in the network
+		  - turns on "inference mode" for all regions in the network
+
+		:param network:
+			A fully initialized Nupic network (a.k.a. the model)
+		:type network: nupic.engine.Network
+
+		:rtype: nupic.engine.Network
+		"""
+
+		# Set predicted field
+		network.regions["sensor"].setParameter(
+			"predictedField",
+			self.predicted_field)
+
+		# Disable learning for all regions
+		network.regions["SP"].setParameter("learningMode", False)
+		network.regions["TM"].setParameter("learningMode", False)
+		for regionName, region in self.model_params['classifiers'].items():
+			network.regions[regionName].setParameter('learningMode', False)
+
+		# Enable inference for all regions
+		network.regions["SP"].setParameter("inferenceMode", True)
+		network.regions["TM"].setParameter("inferenceMode", True)
+		for regionName, region in self.model_params['classifiers'].items():
+			network.regions[regionName].setParameter("inferenceMode", True)
+
+		# We want temporal anomalies so disable anomalyMode in the SP. This mode is
+		# used for computing anomalies in a non-temporal model.
+		network.regions["SP"].setParameter("anomalyMode", False)
+
+		# Enable topDownMode to get the predicted columns output
+		network.regions["TM"].setParameter("topDownMode", True)
+
+		# Enable anomalyMode to compute the anomaly score.
+		network.regions["TM"].setParameter("anomalyMode", True)
+
+		return network
+
+	def write_to_input_file(self, data, append_newline=True):
+		"""
+		Write the given data string to the Nupic model's input file
+
+		:param data: The data to be written to the Nupic model's input file
+		:type data: string
+		:param append_newline: If True, a newline will be written to the
+			input file
+		:type append_newline: bool
+
+		:rtype: None
+		"""
+		self.input_file.write(data)
+		if append_newline:
+			self.input_file.write('\n')
+		self.input_file.flush()
+
+	def await_input_data_from_file(self):
+		"""
+		Block until read JSON from standard input as next data point completes.
+
+		:rtype:  dict
+		"""
+
+		try:
+			# block until the next trade or command is recieved
+			json_data = sys.stdin.readline()
+			log.debug('data read from stdin: {}'.format(json_data))
+			if len(json_data) > 0:
+				data = json.loads(json_data)
+				return data
+			return {}
+		except ValueError as e:
+			log.error(str(e))
+		except EOFError:
+			exit(1)
+
+	def await_input_data_from_command_queue(self):
+		"""
+		Block until data is popped from the command queue.
+
+		:rtype:  dict
+		"""
+		from Queue import Empty
+		while self.is_running:
+			try:
+				# block until the next trade or command is recieved
+				data = self.command_queue.get(timeout=1.0)
+				log.debug('data read from command queue: {}'.format(data))
+				if len(data) > 0:
+					return data
+				return {}
+			except Empty:
+				continue
+			except ValueError as e:
+				log.error(str(e))
+			except EOFError:
+				self.state = 'stopped'
+
+	def compute_next_prediction(self, network, data):
+		"""
+		Make a prediction and save it to the 'model_output_files' directory
+
+		:param network:
+			The Nupic network, which will make the prediction
+		:type network: nupic.engine.Network
+		:param data:
+		:type data: dict
+
+		:rtype: Prediction
+		"""
+
+		# make one prediction
+		network.run(1)
+
+		# extract the prediction
+		predictionResults = getPredictionResults(network, "classifier")
+		predicted_value = predictionResults[1]["predictedValue"]
+		confidence = predictionResults[1]["predictionConfidence"]
+		tc = parser.parse(data['message']['timestamp'])
+		tp = tc + self.timeframe_td
+		p = Prediction(
+			time_predicted=str(tp),
+			exchange=self.exchange_id,
+			market=self.symbol,
+			timeframe=self.timeframe,
+			prediction_type='F',
+			prediction=predicted_value,
+			confidence=confidence * 100,
+			actual=predictionResults[1]['inputValue'],
+			pct_error=None,
+			anomaly_score=predictionResults[1]['anomalyScore'],
+		)
+		return p
+
+	def train(self, network):
+		"""
+		Train the network without making a prediction
+
+		:param network:
+			The Nupic network, which will be trained
+		:type network: nupic.engine.Network
+
+		:rtype: None
+		"""
+
+		network.run(1)
+
+	def build_prediction_msg(self, prediction):
+		"""
+		Build a prediction messages from a prediction object.
+
+		:param prediction: The prediction.
+		:type prediction: Prediction
+		:return: A prediction message.
+		:rtype: dict
+		"""
+		prediction['predicted_field'] = self.predicted_field
+		prediction_message = {
+			'type': JSONMessage.TYPE_PREDICTION_RESULT,
+			'message': prediction,
+		}
+		return prediction_message
+
+	def output_training_confirmation(self):
+		"""
+		Write a confirmation message to standard output as a JSON string
+
+		:return:
+			A confirmation message as a JSON string
+		:rtype: str
+		"""
+
+		confirmation = JSONMessage.build(
+			JSONMessage.TYPE_TRAIN_CONFIRMATION,
+			'The Nupic network was trained successfully')
+		return self.output_message_to_stdout(confirmation)
+
+	def output_message_to_stdout(self, message):
+		"""
+		Write a message to standard output as a JSON string
+
+		:param message:
+			A Python dictionary which will be converted to a
+			JSON string and written to standard output
+		:type message: dict
+
+		:rtype: str
+		"""
+
+		json_string = json.dumps(message)
+		log.debug('data written to stdout: {}'.format(json_string))
+		sys.stdout.write(json_string)
+		sys.stdout.write('\n')
+		sys.stdout.flush()
+		return json_string
+
+	def enable_learning(self):
+		enableLearning(self.network)
+
+	def disable_learning(self):
+		disableLearning(self.network)
+
+	def predictor_thread(self):
+		self.network = None
+		while self.is_running:
+			# block until the next command is
+			# received on standard input
+			msg = self.await_input_data_from_command_queue()
+
+			if msg and 'type' in msg:
+				# instantiate and initialize the Nupic network
+				if msg['type'] == JSONMessage.TYPE_HEADER:
+					for line in msg['data']:
+						self.write_to_input_file(line)
+						log.info('Nupic received header data: {}'.format(line))
+
+					try:
+						data_source = FileRecordStream(self.input_filename)
+						self.network = self.create_network(data_source)
+						self.network = self.post_initialization(self.network)
+						self.output_msg_queue.put({
+							'message': '{} initialized.'.format(self.model_name),
+						})
+					except Exception as e:
+						log.error(str(e), exc_info=True)
+						raise e
+					log.info('{} was initialized'.format(self.__repr__()))
+
+				# make a prediction
+				elif msg['type'] == JSONMessage.TYPE_PREDICT:
+					self.write_to_input_file(msg['data'])
+
+					# make and return the prediction
+					p = self.compute_next_prediction(self.network, msg)
+					log.debug('Nupic made prediction = {}'.format(p))
+					msg = self.build_prediction_msg(p)
+					self.output_msg_queue.put(msg)
+
+				# shut down the predictor
+				elif msg['type'] == JSONMessage.TYPE_QUIT:
+					self.state = 'stopped'
+			else:
+				log.error('''"type" key not found in data''')
+				log.error('''---> data = {}'''.format(msg))
+				self.state = 'stopped'
+
+	def run(self):
+		"""
+		The main entry point of this nupic predictor
+
+		:rtype: None
+		"""
+		try:
+			self.is_started.set()
+			self.state = 'started'
+			self.predictor_thread()
+		except KeyboardInterrupt as e:
+			self.input_file.close()
+			raise e
+		except StopIteration as e:
+			error_log_stack(e)
+			raise e
+		except Exception as e:
+			error_log_stack(e)
+			raise e
+
+	def desired_output(self, x, r, l=0.0, m=0.5, h=1.0):
+		if x < m:
+			s = abs(m - l)
+			o = l + s * r
+			y = o
+		else:
+			s = abs(h - m)
+			o = m + s * r
+			y = o
+		return y
+
+
+predictors = {}
+
+def get_predictor(id):
+	predictor = predictors.get(id, None)
+	if predictor is None:
+		raise ValueError('predictor "{}" not found.'.format(id))
+	return predictor
+
 @app.route('/')
 def hello_world():
 	return 'Hello from the Nupic Predictor!'
 
+@app.route('/predictors/', methods=['GET'])
+def get_predictors():
+	return {k:None for k, v in predictors.items()}
+
+@app.route('/new/predictor/', methods=['POST'])
+def new_predictor():
+	"""
+	Create a new predictor instance to the global `predictors` dictionary.
+
+	POST form data with this format:
+		'model': The Nupic model as a JSON string not a YAML string.
+		'exchange': The exchange ID as a string.
+		'market': The market symbol without slash (meaning '/') characters.
+		'predicted_field': The field the Nupic model should predict.  NOTE:
+			the predicted field should match one sent to the Nupic predictor
+			in the 'sensorParams' contained in the 'model' attribute.
+		'timeframe': '1m' | '5m' | '1h' | '1d' | etc...
+	:return:
+	"""
+	data = json_loads_byteified(request.data)
+	model = data['model']
+	log.debug('Nupic model recieved as JSON: {}'.format(model))
+	exchange = data['exchange']
+	market = data['market']
+	predicted_field = data['predicted_field']
+	timeframe = data['timeframe']
+	count = len(predictors) + 1
+	model_identity = '{}-{}-{}-{}-{}'.format(
+		count,
+		exchange,
+		market,
+		predicted_field,
+		timeframe,
+	)
+	model_filename_fq = os.path.join(
+		os.environ['NUPIC_MODEL_DIR'],
+		'{}.yaml'.format(model_identity),
+	)
+	log.debug('creating Nupic model file: {}'.format(model_filename_fq))
+	with open(model_filename_fq, 'w') as f:
+		yaml.dump(model, f)
+	predictor = NupicPredictorv2(
+		exchange=exchange,
+		market=market,
+		predicted_field=predicted_field,
+		timeframe=timeframe,
+		model_filename=model_filename_fq,
+		model_identity=model_identity,
+	)
+	predictors[model_identity] = predictor
+	log.debug('predictors = {}'.format(predictors))
+	msg = {
+		'success': True,
+		'message': 'created',
+		'predictor': {
+			'id': model_identity,
+			'model_filename': model_filename_fq,
+		}
+	}
+	return json.dumps(msg), 201, {'ContentType': 'application/json'}
+
+@app.route('/start/predictor/<id>/', methods=['POST'])
+def start_predictor(id):
+	"""
+	Start a Nupic predictor initializing its input file with the header rows.
+
+	The field 'header-json-message' in the form data must contain the
+	following as a JSON string:
+		[
+			"timestamp, field_1, field_2, ..., field_3",
+			"datetime, float, float, ..., float",
+			"T, , , , ",
+		]
+
+	NOTE: The predictor must have first been created, else error is returned.
+
+	:param id: The `model_identity` attribute of the Nupic predictor.
+	:type id: str
+	:return:
+	"""
+	log.debug('start_predictor request: {}'.format(request))
+	header_rows = json_loads_byteified(request.data)
+	predictor = get_predictor(id)
+	predictor.start()
+	msg = {
+		'type': JSONMessage.TYPE_HEADER,
+		'data': header_rows,
+	}
+	predictor.command_queue.put(msg)
+	msg = predictor.output_msg_queue.get()
+	msg.update({'success': True})
+	return json.dumps(msg), 200, {'ContentType': 'application/json'}
+
+@app.route('/stop/predictor/<id>/', methods=['POST'])
+def stop_predictor(id):
+	"""
+	Stop the given Nupic predictor.
+
+	:param id: The `model_identity` attribute of the Nupic predictor.
+	:type id: str
+	:return:
+	"""
+	predictor = get_predictor(id)
+	msg = {
+		'type': JSONMessage.TYPE_QUIT,
+	}
+	predictor.command_queue.put(msg)
+	return {'message': 'stopped'}
+
+@app.route('/predict/<id>/<should_learn>/', methods=['POST'])
+def predict(id, should_learn):
+	"""
+	Make a prediction from a row of input data with learning disabled.
+
+	The `data` field must be set like this:
+		'2018-06-10 22:58:00.000000,6702.0,6709.0'
+
+	:param id: The `model_identity` attribute of the Nupic predictor.
+	:type id: str
+	:param should_learn: Either: 'true' or 'false'
+	:type should_learn: str
+	:return: The prediction made by the Nupic model.
+	"""
+	input_data = request.form['data']
+	predictor = get_predictor(id)
+	if should_learn == 'true':
+		predictor.enable_learning()
+	else:
+		predictor.disable_learning()
+	msg = {
+		'type': JSONMessage.TYPE_PREDICT,
+		'data': input_data,
+	}
+	predictor.command_queue.put(msg)
+	prediction_msg = predictor.output_msg_queue.get()
+	return prediction_msg
+
 
 if __name__ == "__main__":
-	predictor = NupicPredictor(parse_args=True)
+	predictor = NupicPredictorv2(parse_args=True)
 	predictor.run()

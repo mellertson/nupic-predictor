@@ -18,5 +18,7 @@ services:
             cn_back:
                 aliases:
                     - nupic_predictor.cybertron.ninja
+        env_file:
+            - .dev.env
         ports:
             - "5000:5000"
