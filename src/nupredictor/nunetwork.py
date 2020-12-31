@@ -681,12 +681,12 @@ def getPredictionResults(network, clRegionName):
 	return results
 
 
-def enableLearning(network):
+def enableLearning(network, model_params):
 	""" Enable learning for all regions in a Nupic network. """
 	network.regions["SP"].setParameter("learningMode", True)
 	network.regions["TM"].setParameter("learningMode", True)
 	for regionName, region in model_params['classifiers'].items():
-		network.regions['regionName'].setParameter('learningMode', True)
+		network.regions[regionName].setParameter('learningMode', True)
 
 
 def disableLearning(network, model_params):
@@ -694,7 +694,7 @@ def disableLearning(network, model_params):
 	network.regions["SP"].setParameter("learningMode", False)
 	network.regions["TM"].setParameter("learningMode", False)
 	for regionName, region in model_params['classifiers'].items():
-		network.regions['regionName'].setParameter('learningMode', False)
+		network.regions[regionName].setParameter('learningMode', False)
 
 
 def store_prediction(url, username, password, action, prediction):
@@ -1543,7 +1543,7 @@ class NupicPredictorv2(t.Thread):
 			except EOFError:
 				self.state = 'stopped'
 
-	def compute_next_prediction(self, network, data):
+	def get_prediction(self, network, data, regionName):
 		"""
 		Make a prediction and save it to the 'model_output_files' directory
 
@@ -1552,18 +1552,17 @@ class NupicPredictorv2(t.Thread):
 		:type network: nupic.engine.Network
 		:param data:
 		:type data: dict
+		:param regionName: The named region to get the prediction for.
+		:type regionName: str
 
 		:rtype: Prediction
 		"""
 
-		# make one prediction
-		network.run(1)
-
 		# extract the prediction
-		predictionResults = getPredictionResults(network, "classifier")
+		predictionResults = getPredictionResults(network, regionName)
 		predicted_value = predictionResults[1]["predictedValue"]
 		confidence = predictionResults[1]["predictionConfidence"]
-		tc = parser.parse(data['message']['timestamp'])
+		tc = parser.parse(data['data'].split(',')[0])
 		tp = tc + self.timeframe_td
 		p = Prediction(
 			time_predicted=str(tp),
@@ -1592,19 +1591,20 @@ class NupicPredictorv2(t.Thread):
 
 		network.run(1)
 
-	def build_prediction_msg(self, prediction):
+	def build_prediction_msg(self, predictions):
 		"""
 		Build a prediction messages from a prediction object.
 
-		:param prediction: The prediction.
-		:type prediction: Prediction
+		:param predictions: The prediction.
+		:type predictions: list of Prediction
 		:return: A prediction message.
 		:rtype: dict
 		"""
-		prediction['predicted_field'] = self.predicted_field
+		for p in predictions:
+			p['predicted_field'] = self.predicted_field
 		prediction_message = {
 			'type': JSONMessage.TYPE_PREDICTION_RESULT,
-			'message': prediction,
+			'message': predictions,
 		}
 		return prediction_message
 
@@ -1642,10 +1642,10 @@ class NupicPredictorv2(t.Thread):
 		return json_string
 
 	def enable_learning(self):
-		enableLearning(self.network)
+		enableLearning(self.network, self.model_params)
 
 	def disable_learning(self):
-		disableLearning(self.network)
+		disableLearning(self.network, self.model_params)
 
 	def predictor_thread(self):
 		self.network = None
@@ -1676,16 +1676,26 @@ class NupicPredictorv2(t.Thread):
 				# make a prediction
 				elif msg['type'] == JSONMessage.TYPE_PREDICT:
 					self.write_to_input_file(msg['data'])
+					self.network.run(1)
 
 					# make and return the prediction
-					p = self.compute_next_prediction(self.network, msg)
-					log.debug('Nupic made prediction = {}'.format(p))
-					msg = self.build_prediction_msg(p)
+					predictions = []
+					for regionName in self.model_params['classifiers'].keys():
+						p = self.get_prediction(self.network, msg, regionName)
+						predictions.append(p)
+						log.debug('Nupic made prediction = {}'.format(p))
+					msg = self.build_prediction_msg(predictions)
 					self.output_msg_queue.put(msg)
 
 				# shut down the predictor
 				elif msg['type'] == JSONMessage.TYPE_QUIT:
 					self.state = 'stopped'
+					self.output_msg_queue.put({
+						'message': '{} {}'.format(
+							self.model_name,
+							'is running' if self.is_running else 'stopped',
+						),
+					})
 			else:
 				log.error('''"type" key not found in data''')
 				log.error('''---> data = {}'''.format(msg))
@@ -1842,7 +1852,9 @@ def stop_predictor(id):
 		'type': JSONMessage.TYPE_QUIT,
 	}
 	predictor.command_queue.put(msg)
-	return {'message': 'stopped'}
+	msg = predictor.output_msg_queue.get()
+	msg.update({'success': True})
+	return json.dumps(msg), 200, {'ContentType': 'application/json'}
 
 @app.route('/predict/<id>/<should_learn>/', methods=['POST'])
 def predict(id, should_learn):
@@ -1858,7 +1870,8 @@ def predict(id, should_learn):
 	:type should_learn: str
 	:return: The prediction made by the Nupic model.
 	"""
-	input_data = request.form['data']
+	log.debug('/predict/{}/{}/ request: {}'.format(id, should_learn, request))
+	input_data = json_loads_byteified(request.data)
 	predictor = get_predictor(id)
 	if should_learn == 'true':
 		predictor.enable_learning()
@@ -1869,8 +1882,9 @@ def predict(id, should_learn):
 		'data': input_data,
 	}
 	predictor.command_queue.put(msg)
-	prediction_msg = predictor.output_msg_queue.get()
-	return prediction_msg
+	msg = predictor.output_msg_queue.get()
+	msg.update({'success': True})
+	return json.dumps(msg), 200, {'ContentType': 'application/json'}
 
 
 if __name__ == "__main__":

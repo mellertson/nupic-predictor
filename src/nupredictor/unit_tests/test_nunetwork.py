@@ -365,7 +365,6 @@ class POST_to_new_predictor_endpoint(TestCase):
 	predicted_field = 'target_value'
 	timeframe = '1m'
 	model_filename = os.path.join(MODEL_DIR, 'model-templatev2.yaml')
-	# model_filename = os.path.join(MODEL_DIR, 'nupic_network_model.yaml')
 	with open(model_filename, 'r') as f:
 		model = yaml.load(f)
 
@@ -380,6 +379,9 @@ class POST_to_new_predictor_endpoint(TestCase):
 	def test_send_POST_requests_in_correct_order(self):
 		self.POST_01_new_predictor()
 		self.POST_02_start_predictor()
+		self.POST_03_predict_with_learning_off()
+		self.POST_04_predict_with_learning_on()
+		self.POST_05_stop_predictor()
 
 	def POST_01_new_predictor(self):
 		payload = {
@@ -414,6 +416,35 @@ class POST_to_new_predictor_endpoint(TestCase):
 		self.assertEqual(200, r.status_code, msg=heading(r.text))
 		self.print_response(r)
 
+	def POST_03_predict_with_learning_off(self):
+		""" Send a "predict" message to Nupic with learning off. """
+		payload = '2018-06-10 22:58:00.000000,6702.0,6709.0'
+		r = requests.post(
+			'http://localhost:5000/predict/{}/false/'.format(self.predictor_id),
+			data=json.dumps(payload),
+			headers={'Content-type': 'application/json', 'Accept': 'text/plain'},
+		)
+		self.assertEqual(200, r.status_code, msg=heading(r.text))
+		self.print_response(r)
+
+	def POST_04_predict_with_learning_on(self):
+		""" Send a "predict" message to Nupic with learning on. """
+		payload = '2018-06-10 22:59:00.000000,6702.0,6709.0'
+		r = requests.post(
+			'http://localhost:5000/predict/{}/true/'.format(self.predictor_id),
+			data=json.dumps(payload),
+			headers={'Content-type': 'application/json', 'Accept': 'text/plain'},
+		)
+		self.assertEqual(200, r.status_code, msg=heading(r.text))
+		self.print_response(r)
+
+	def POST_05_stop_predictor(self):
+		""" Send a "stop predictor" message to Nupic. """
+		r = requests.post(
+			'http://localhost:5000/stop/predictor/{}/'.format(self.predictor_id),
+		)
+		self.assertEqual(200, r.status_code, msg=heading(r.text))
+		self.print_response(r)
 
 
 
