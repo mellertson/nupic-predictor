@@ -1,0 +1,24 @@
+version: "3.8"
+networks:
+    cn_public:
+    cn_front:
+    cn_back:
+
+services:
+
+    nupic_predictor:
+        image: registry.cybertron.ninja/nupic_predictor:latest
+        build:
+            context: ./
+            dockerfile: Dockerfile
+        networks:
+            cn_front:
+                aliases:
+                    - nupic_predictor.cybertron.ninja
+            cn_back:
+                aliases:
+                    - nupic_predictor.cybertron.ninja
+        env_file:
+            - .dev.env
+        ports:
+            - "5000:5000"
