@@ -418,13 +418,20 @@ class POST_to_new_predictor_endpoint(TestCase):
 
 	def POST_03_predict_with_learning_off(self):
 		""" Send a "predict" message to Nupic with learning off. """
+		# setup
 		payload = '2018-06-10 22:58:00.000000,6702.0,6709.0'
+
+		# test
 		r = requests.post(
 			'http://localhost:5000/predict/{}/false/'.format(self.predictor_id),
 			data=json.dumps(payload),
 			headers={'Content-type': 'application/json', 'Accept': 'text/plain'},
 		)
+
+		# verify
 		self.assertEqual(200, r.status_code, msg=heading(r.text))
+		actual = json.loads(r.text.decode('utf-8'))
+		self.assertEqual(0, actual['message'][0]['prediction'])
 		self.print_response(r)
 
 	def POST_04_predict_with_learning_on(self):
@@ -446,7 +453,23 @@ class POST_to_new_predictor_endpoint(TestCase):
 		self.assertEqual(200, r.status_code, msg=heading(r.text))
 		self.print_response(r)
 
+	def test_construct_predict_payload(self):
+		def construct_predict_payload(self, timestamp, observation):
+			line = str(timestamp)
+			for x in observation:
+				line += ', ' + str(x)
+			return line
 
+		# setup
+		timestamp = datetime.now().isoformat()
+		observation = (1.1, 2.2, 3.3)
+
+		# test
+		actual = construct_predict_payload(self, timestamp, observation)
+
+		# verify
+		expected = '{}, 1.1, 2.2, 3.3'.format(timestamp)
+		self.assertEqual(expected, actual)
 
 
 

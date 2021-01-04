@@ -1,25 +1,5 @@
-# Type of model that the rest of these parameters apply to.
 model: HTMPrediction
-
-# Version that specifies the format of the config.
 version: 1
-
-# The section "aggregationInfo" specifies what field to aggregate with which
-# aggregation method.
-#
-# Example of how to aggregate the field "consumption" with the method "mean"
-# and the field "gym" with the method "first". Both field will be
-# aggregated over a period of 1h 15m, according to their respective
-# aggregation methods.
-#
-#   aggregationInfo:
-#     fields:
-#     - [consumption, sum]
-#     - [gym, first]
-#     minutes: 15
-#     hours: 1
-#
-# See nupic.data.aggregator for more info about supported aggregation methods.
 aggregationInfo:
   # "fields" should be a list of pairs. Each pair is a field name and an
   # aggregation function (e.g. sum). The function will be used to aggregate
@@ -45,12 +25,8 @@ aggregationInfo:
   days: 0
   weeks: 0
   years: 0
-
 predictAheadTime: null
-
-# Parameters of the model to be created.
 modelParams:
-
   # The type of inference that this model will perform.
   # Supported values are :
   # - TemporalNextStep
@@ -61,14 +37,12 @@ modelParams:
   # - TemporalMultiStep
   # - NontemporalMultiStep
   inferenceType: TemporalMultiStep
-
   # Parameters of the Sensor region
   sensorParams:
     # Sensor diagnostic output verbosity control:
     # - verbosity == 0: silent
     # - verbosity in [1 .. 6]: increasing level of verbosity
     verbosity: 0
-
     # List of encoders and their parameters.
     encoders:
       spread:
@@ -98,30 +72,6 @@ modelParams:
         fieldname: timestamp
         name: timestamp_season
         season: 21
-
-    # The "sensorAutoReset" specifies the period for automatically generated
-    # resets from a RecordSensor.
-    #
-    # If None, disable automatically generated resets. Also disable for all
-    # values that evaluate to 0. Example:
-    #   sensorAutoReset: null
-    #
-    #
-    # Valid keys for the "sensorAutoReset" option:
-    #   sensorAutoReset:
-    #    days: <int>
-    #     hours: <int>
-    #     minutes: <int>
-    #     seconds: <int>
-    #     milliseconds: <int>
-    #     microseconds: <int>
-    #     weeks: <int>
-    #
-    # Example for an automated reset every 1.5 days:
-    #   sensorAutoReset:
-    #     days: 1
-    #     hours: 12
-    #
     sensorAutoReset: null
 
 
