@@ -645,6 +645,7 @@ def createSensorToClassifierLinks(network, sensorRegionName, classifierRegionNam
 
 def createEncoder(encoderParams):
 	"""Create a multi-encoder from params."""
+	log.debug('creating encoders using encoder params: {}'.format(encoderParams))
 	encoder = MultiEncoder()
 	encoder.addMultipleEncoders(encoderParams)
 	return encoder
@@ -1415,6 +1416,9 @@ class NupicPredictorv2(t.Thread):
 		# Classifier Regions
 		################################################################################
 		for regionName, region in modelParams['classifiers'].items():
+			log.debug('adding classifier region({}) with classifier params: {}'.format(
+				regionName, region
+			))
 			# Add the classifier region
 			regionType = "py.%s" % region.pop("regionType")
 			network.addRegion(regionName, regionType, json.dumps(region))
