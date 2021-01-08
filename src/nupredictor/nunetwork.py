@@ -121,7 +121,7 @@ class DateTimeUtils(object):
 	FMT = "%m/%d/%Y %I:%M %P (%Z)"
 	utc_zone = tz.tzutc()
 	local_zone = tz.tzlocal()
-	ptn = re.compile(r'(?P<value>[\d]+)(?P<units>[mhd])')
+	ptn = re.compile(r'(?P<value>[\d]+)(?P<units>[smhd])')
 
 	@classmethod
 	def timedelta_to_units_and_value(cls, td):
@@ -153,27 +153,30 @@ class DateTimeUtils(object):
 		Transform a string into a timedelta object
 
 		:param timeframe:
-			Choices are: '15m' | '30m' | '1m' | '5m' | '1h' | '1d'
+			Choices are: '15s' | '15m' | '30m' | '1m' | '5m' | '1h' | '1d'
 		:type timeframe: str
 
 		:return:
 			A timedelta equivilent to the 'timeframe' argument
 		:rtype: timedelta
 		"""
-
+		msg = 'Invalid "timeframe" parameter: {}'.format(timeframe)
 		m = cls.ptn.search(timeframe)
 		if m:
 			value = int(m.group('value'))
 			units = m.group('units')
-			if units == 'm':
+			if units == 's':
+				return timedelta(seconds=value)
+			elif units == 'm':
 				return timedelta(minutes=value)
 			elif units == 'h':
 				return timedelta(hours=value)
 			elif units == 'd':
 				return timedelta(days=value)
 			else:
-				msg = 'Invalid "timeframe" parameter: {}'.format(timeframe)
 				raise ValueError(msg)
+		else:
+			raise ValueError(msg)
 
 	@classmethod
 	def format_usa(cls, dt):
@@ -182,7 +185,8 @@ class DateTimeUtils(object):
 
 class Prediction(dict):
 	def __init__(self, time_predicted, exchange, market, timeframe,
-				 prediction_type, prediction, confidence, actual, pct_error, anomaly_score):
+				 prediction_type, prediction, confidence, actual, pct_error, anomaly_score,
+				 predicted_field=None):
 		super(Prediction, self).__init__()
 		log.debug('Constructing a prediction:')
 		log.debug('\ttime_predicted: {}'.format(time_predicted))
@@ -195,6 +199,7 @@ class Prediction(dict):
 		log.debug('\tactual: {}'.format(actual))
 		log.debug('\tpct_error: {}'.format(pct_error))
 		log.debug('\tanomaly_score: {}'.format(anomaly_score))
+		log.debug('\tpredicted_field: {}'.format(predicted_field))
 
 		self['time_predicted'] = str(time_predicted)
 		self['exchange'] = str(exchange)
@@ -206,6 +211,7 @@ class Prediction(dict):
 		self['actual'] = float(actual)
 		self['pct_error'] = float(pct_error) if pct_error else 0.0
 		self['anomaly_score'] = float(anomaly_score)
+		self['predicted_field'] = predicted_field
 
 
 class bcolors(object):
@@ -1290,8 +1296,10 @@ class NupicPredictorv2(t.Thread):
 		self.symbol = self.options.market
 		self.symbol_fixed = self.options.market.replace('/', '')
 		self.predicted_field = self.options.predicted_field
-		self.timeframe = self.options.timeframe
+		self.timeframe = timeframe
 		self.timeframe_td = DateTimeUtils.string_to_timeframe(self.timeframe)
+		log.debug('{}.timeframe = {}'.format(self.__class__.__name__, self.timeframe))
+		log.debug('{}.timeframe_td = {}'.format(self.__class__.__name__, self.timeframe_td))
 		self.input_filename = '/tmp/{}-{}.csv'.format(
 			self.name, random.randint(1, 999999999))
 		self.input_file = open(self.input_filename, 'w+')
@@ -1566,6 +1574,7 @@ class NupicPredictorv2(t.Thread):
 		predictionResults = getPredictionResults(network, regionName)
 		predicted_value = predictionResults[1]["predictedValue"]
 		confidence = predictionResults[1]["predictionConfidence"]
+		log.debug('data = {}'.format(data))
 		tc = parser.parse(data['data'].split(',')[0])
 		tp = tc + self.timeframe_td
 		p = Prediction(
@@ -1579,6 +1588,7 @@ class NupicPredictorv2(t.Thread):
 			actual=predictionResults[1]['inputValue'],
 			pct_error=None,
 			anomaly_score=predictionResults[1]['anomalyScore'],
+			predicted_field=self.predicted_field,
 		)
 		return p
 
@@ -1775,6 +1785,10 @@ def new_predictor():
 	market = data['market']
 	predicted_field = data['predicted_field']
 	timeframe = data['timeframe']
+	log.debug('exchange = {}'.format(exchange))
+	log.debug('market = {}'.format(market))
+	log.debug('predicted_field = {}'.format(predicted_field))
+	log.debug('timeframe = {}'.format(timeframe))
 	count = len(predictors) + 1
 	model_identity = '{}-{}-{}-{}-{}'.format(
 		count,
@@ -1894,3 +1908,7 @@ def predict(id, should_learn):
 if __name__ == "__main__":
 	predictor = NupicPredictorv2(parse_args=True)
 	predictor.run()
+
+
+
+
