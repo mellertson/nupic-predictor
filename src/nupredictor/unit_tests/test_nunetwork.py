@@ -13,6 +13,8 @@ from nupic.data.file_record_stream import FileRecordStream
 import threading, logging
 import multiprocessing as mp
 from timeout_wrapper import timeout
+from nupredictor.nunetwork import json_loads_byteified
+
 
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
@@ -472,7 +474,129 @@ class POST_to_new_predictor_endpoint(TestCase):
 		self.assertEqual(expected, actual)
 
 
+class Predict_sine_wave(TestCase):
+	""" POST to Flask server to predict a sine wave. """
+	exchange = 'bittrex'
+	market = 'btcusd'
+	predicted_field = 'target_value'
+	timeframe = '1m'
+	model_filename = os.path.join(MODEL_DIR, 'model-templatev2.yaml')
+	with open(model_filename, 'r') as f:
+		model = yaml.load(f)
 
+	def print_response(self, r):
+		print('POST response: {}'.format(r.text))
+		print('---> type(r.text) == {}'.format(type(r.text)))
+
+	def setUp(self):
+		super(Predict_sine_wave, self).setUp()
+		self.predictor_id = None
+		self.instantiate_new_predictor()
+		self.start_the_predictor()
+		self.predictions_count = 3000
+		self.start = datetime(2020, 1, 1, 12)
+		self.period = timedelta(seconds=60)
+		self.actual = []
+
+	def tearDown(self):
+		super(Predict_sine_wave, self).tearDown()
+		self.stop_the_predictor()
+
+	def instantiate_new_predictor(self):
+		payload = {
+			'model': self.model,
+			'exchange': self.exchange,
+			'market': self.market,
+			'predicted_field': self.predicted_field,
+			'timeframe': self.timeframe,
+		}
+		r = requests.post(
+			'http://localhost:5000/new/predictor/',
+			data=json.dumps(payload),
+			headers={'Content-type': 'application/json', 'Accept': 'text/plain'},
+		)
+		self.assertEqual(201, r.status_code)
+		self.print_response(r)
+		data = json.loads(r.text)
+		self.predictor_id = data['predictor']['id']
+
+	def start_the_predictor(self):
+		payload = [
+			'timestamp, spread, target_value',
+			'datetime, float, float',
+			'T,,',
+		]
+		self.assertIsNotNone(self.predictor_id)
+		r = requests.post(
+			'http://localhost:5000/start/predictor/{}/'.format(self.predictor_id),
+			data=json.dumps(payload),
+			headers={'Content-type': 'application/json', 'Accept': 'text/plain'},
+		)
+		self.assertEqual(200, r.status_code, msg=heading(r.text))
+		self.print_response(r)
+
+	def stop_the_predictor(self):
+		""" Send a "stop predictor" message to Nupic. """
+		r = requests.post(
+			'http://localhost:5000/stop/predictor/{}/'.format(self.predictor_id),
+		)
+		self.assertEqual(200, r.status_code, msg=heading(r.text))
+		self.print_response(r)
+
+	def train_the_network(self, y_intercept):
+		"""
+		Train the network with learning on.
+
+		:param y_intercept: An offset, which will be added to the input_data
+			to get the "desired prediction value".
+		:type y_intercept: int
+		"""
+		# setup
+		for i in range(self.predictions_count):
+			payload = '{},{},{}'.format(self.start.isoformat(), i, i + y_intercept)
+			self.start = self.start + timedelta(seconds=60 + i)
+
+			# train the network
+			r = requests.post(
+				'http://localhost:5000/predict/{}/true/'.format(self.predictor_id),
+				data=json.dumps(payload),
+				headers={'Content-type': 'application/json', 'Accept': 'text/plain'},
+			)
+			self.assertEqual(200, r.status_code, msg=heading(r.text))
+
+	def test_predicting_a_straight_line(self):
+		""" Verify predictions are within +/- 0.1% """
+		# setup
+		verify_count = 10
+		prediction_offset = 1000
+		expected_pct_err = 0.001 #: meaning 0.1%
+		start = self.predictions_count
+		stop = self.predictions_count + verify_count
+		self.train_the_network(prediction_offset)
+
+		for i in range(start, stop):
+			payload = '{},{},{}'.format(self.start.isoformat(), i, i + prediction_offset)
+			self.start = self.start + timedelta(seconds=60 + i)
+
+			# test
+			r = requests.post(
+				'http://localhost:5000/predict/{}/true/'.format(self.predictor_id),
+				data=json.dumps(payload),
+				headers={'Content-type': 'application/json', 'Accept': 'text/plain'},
+			)
+
+			# verify
+			self.assertEqual(200, r.status_code, msg=heading(r.text))
+			prediction_msg = json_loads_byteified(r.text)
+			expected = i + prediction_offset
+			actual = prediction_msg['message'][0]['prediction']
+			actual_pct_err = abs((actual - expected) / expected)
+			msg = heading('Expected: {} +/- {}%\n\nBut, got: {} {}%'.format(
+					expected,
+					expected_pct_err * 100.0,
+					actual,
+					actual_pct_err * 100.0))
+			self.assertLessEqual(actual_pct_err, expected_pct_err, msg=msg)
 
 
 

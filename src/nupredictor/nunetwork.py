@@ -45,6 +45,10 @@ __all__ = [
 	'JSONMessage',
 	'NupicPredictor',
 	'NupicPredictorv2',
+
+	# json functions
+	'json_load_byteified',
+	'json_loads_byteified',
 ]
 
 
@@ -663,7 +667,6 @@ def getPredictionResults(network, clRegionName):
 
 	:rtype: list of dict
 	"""
-
 	classifierRegion = network.regions[clRegionName]
 	temporalPoolerRegion = network.regions["TM"]
 	sensorRegion = network.regions["sensor"]
@@ -821,7 +824,7 @@ class NupicPredictor(t.Thread):
 	def __init__(self, topic='trade', exchange='bittrex', market='btc/usd',
 				 predicted_field=None, timeframe='1m',
 				 parse_args=False, model_filename=None, model_identity=None):
-		super(NupicPredictor, self).__init__(
+		super(NupicPredictorv2, self).__init__(
 			target=self.run, name='NupicPredictor.run')
 		self.network = None
 		self.model_identity = model_identity
@@ -861,6 +864,7 @@ class NupicPredictor(t.Thread):
 		self.is_started = t.Event()
 		self.is_started.clear()
 		self.command_queue = mp.Queue()
+		self.output_msg_queue = mp.Queue()
 		log.debug('Nupic Predictor initialized')
 		log.debug('-' * 100)
 
@@ -1139,7 +1143,7 @@ class NupicPredictor(t.Thread):
 
 		:rtype: str
 		"""
-
+		self.output_message.put(message)
 		json_string = json.dumps(message)
 		log.debug('data written to stdout: {}'.format(json_string))
 		sys.stdout.write(json_string)
@@ -1746,6 +1750,49 @@ class NupicPredictorv2(t.Thread):
 			y = o
 		return y
 
+	def compute_prediction(self, input_data, should_learn=True):
+		"""
+		Make a prediction from a row of input data.
+
+		The `data` must be a string formatted like this:
+			'2018-06-10 22:58:00.000000,6702.0,6709.0'
+
+		:param input_data: The row of input data, which will be used to make a
+			prediction.
+		:type input_data: str
+		:param should_learn:
+			True - enables learning when making the prediction.
+			False - disables learning when making the prediction.
+		:type should_learn: bool
+		:return: The prediction made by the Nupic model.
+			For example:
+				[{
+					'time_predicted': '2018-06-10 22:59:00',
+					'confidence': 100.0,
+					'pct_error': 0.0,
+					'actual': 0.0,
+					'prediction_type': 'F',
+					'exchange': 'bittrex',
+					'prediction': 0.0,
+					'anomaly_score': 1.0,
+					'predicted_field': 'target_value',
+					'timeframe': '1m',
+					'market': 'btcusd',
+				}]
+		:rtype: list of dict
+		"""
+		if should_learn:
+			self.enable_learning()
+		else:
+			self.disable_learning()
+		input_msg = {
+			'type': JSONMessage.TYPE_PREDICT,
+			'data': input_data,
+		}
+		self.command_queue.put(input_msg)
+		prediction = self.output_msg_queue.get()
+		return prediction
+
 
 predictors = {}
 
@@ -1887,22 +1934,31 @@ def predict(id, should_learn):
 	:param should_learn: Either: 'true' or 'false'
 	:type should_learn: str
 	:return: The prediction made by the Nupic model.
+		For example:
+			[{
+				'time_predicted': '2018-06-10 22:59:00',
+				'confidence': 100.0,
+				'pct_error': 0.0,
+				'actual': 0.0,
+				'prediction_type': 'F',
+				'exchange': 'bittrex',
+				'prediction': 0.0,
+				'anomaly_score': 1.0,
+				'predicted_field': 'target_value',
+				'timeframe': '1m',
+				'market': 'btcusd',
+			}]
 	"""
 	log.debug('/predict/{}/{}/ request: {}'.format(id, should_learn, request))
 	input_data = json_loads_byteified(request.data)
 	predictor = get_predictor(id)
 	if should_learn == 'true':
-		predictor.enable_learning()
+		should_learn = True
 	else:
-		predictor.disable_learning()
-	msg = {
-		'type': JSONMessage.TYPE_PREDICT,
-		'data': input_data,
-	}
-	predictor.command_queue.put(msg)
-	msg = predictor.output_msg_queue.get()
-	msg.update({'success': True})
-	return json.dumps(msg), 200, {'ContentType': 'application/json'}
+		should_learn = False
+	prediction = predictor.compute_prediction(input_data, should_learn=should_learn)
+	prediction.update({'success': True})
+	return json.dumps(prediction), 200, {'ContentType': 'application/json'}
 
 
 if __name__ == "__main__":
