@@ -484,10 +484,6 @@ class Predict_sine_wave(TestCase):
 	with open(model_filename, 'r') as f:
 		model = yaml.load(f)
 
-	def print_response(self, r):
-		print('POST response: {}'.format(r.text))
-		print('---> type(r.text) == {}'.format(type(r.text)))
-
 	def setUp(self):
 		super(Predict_sine_wave, self).setUp()
 		self.predictor_id = None
@@ -516,7 +512,6 @@ class Predict_sine_wave(TestCase):
 			headers={'Content-type': 'application/json', 'Accept': 'text/plain'},
 		)
 		self.assertEqual(201, r.status_code)
-		self.print_response(r)
 		data = json.loads(r.text)
 		self.predictor_id = data['predictor']['id']
 
@@ -533,7 +528,6 @@ class Predict_sine_wave(TestCase):
 			headers={'Content-type': 'application/json', 'Accept': 'text/plain'},
 		)
 		self.assertEqual(200, r.status_code, msg=heading(r.text))
-		self.print_response(r)
 
 	def stop_the_predictor(self):
 		""" Send a "stop predictor" message to Nupic. """
@@ -541,7 +535,6 @@ class Predict_sine_wave(TestCase):
 			'http://localhost:5000/stop/predictor/{}/'.format(self.predictor_id),
 		)
 		self.assertEqual(200, r.status_code, msg=heading(r.text))
-		self.print_response(r)
 
 	def train_the_network(self, y_intercept):
 		"""
@@ -598,6 +591,8 @@ class Predict_sine_wave(TestCase):
 					actual_pct_err * 100.0))
 			self.assertLessEqual(actual_pct_err, expected_pct_err, msg=msg)
 
+	# TODO: see how many data points is required to predict a spike wave.
+	# TODO: see how many data points is required to predict a sine wave.
 
 
 
