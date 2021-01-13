@@ -16,6 +16,9 @@ from timeout_wrapper import timeout
 from nupredictor.nunetwork import json_loads_byteified
 
 
+# TODO: see how many data points is required to predict a spike wave.
+# TODO: see how many data points is required to predict a sine wave.
+
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
 
@@ -564,35 +567,45 @@ class Predict_sine_wave(TestCase):
 		prediction_offset = 1000
 		expected_pct_err = 0.001 #: meaning 0.1%
 		start = self.predictions_count
-		stop = self.predictions_count + verify_count
+		stop = start + verify_count
 		self.train_the_network(prediction_offset)
 
 		for i in range(start, stop):
 			payload = '{},{},{}'.format(self.start.isoformat(), i, i + prediction_offset)
 			self.start = self.start + timedelta(seconds=60 + i)
 
-			# test
-			r = requests.post(
-				'http://localhost:5000/predict/{}/true/'.format(self.predictor_id),
-				data=json.dumps(payload),
-				headers={'Content-type': 'application/json', 'Accept': 'text/plain'},
-			)
+			self.get_and_verify_prediction(payload, i, prediction_offset, expected_pct_err, should_learn=True)
+			self.get_and_verify_prediction(payload, i, prediction_offset, expected_pct_err, should_learn=False)
 
-			# verify
-			self.assertEqual(200, r.status_code, msg=heading(r.text))
-			prediction_msg = json_loads_byteified(r.text)
-			expected = i + prediction_offset
-			actual = prediction_msg['message'][0]['prediction']
-			actual_pct_err = abs((actual - expected) / expected)
-			msg = heading('Expected: {} +/- {}%\n\nBut, got: {} {}%'.format(
-					expected,
-					expected_pct_err * 100.0,
-					actual,
-					actual_pct_err * 100.0))
-			self.assertLessEqual(actual_pct_err, expected_pct_err, msg=msg)
+	def get_and_verify_prediction(self, payload, i, prediction_offset, expected_pct_err, should_learn=True):
+		if should_learn:
+			_should_learn = 'true'
+		else:
+			_should_learn = 'false'
 
-	# TODO: see how many data points is required to predict a spike wave.
-	# TODO: see how many data points is required to predict a sine wave.
+		# test
+		r = requests.post(
+			'http://localhost:5000/predict/{}/{}/'.format(self.predictor_id, _should_learn),
+			data=json.dumps(payload),
+			headers={'Content-type': 'application/json', 'Accept': 'text/plain'},
+		)
+
+		# verify
+		self.assertEqual(200, r.status_code, msg=heading(r.text))
+		prediction_msg = json_loads_byteified(r.text)
+		expected = i + prediction_offset
+		actual = prediction_msg['message'][0]['prediction']
+		actual_pct_err = abs((actual - expected) / expected)
+		msg = heading('Expected: {} +/- {}%\n\t---> with should_learn = {}\n\nBut, got: {} {}%'.format(
+			expected,
+			expected_pct_err * 100.0,
+			_should_learn,
+			actual,
+			actual_pct_err * 100.0),
+		)
+		self.assertLessEqual(actual_pct_err, expected_pct_err, msg=msg)
+
+
 
 
 
