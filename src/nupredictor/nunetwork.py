@@ -360,7 +360,7 @@ def create_output_directory(fq_model_template_filename, fq_model_filename,
 
 
 def fetch_market_data(exchange, markets, data_table, start, end, timeframe,
-					  username='mellertson', password='test', host='localhost', port=8000,
+					  username='test_user', password='test', host='localhost', port=8000,
 					  protocol='http'):
 	"""
 	Get data from Django web-service

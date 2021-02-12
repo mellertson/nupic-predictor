@@ -7,7 +7,7 @@ networks:
 services:
 
     nupic_predictor:
-        image: registry.cybertron.ninja/nupic_predictor:latest
+        image: nupic_predictor:latest
         build:
             context: ./
             dockerfile: Dockerfile

@@ -8,4 +8,4 @@ source $SRC_ROOT/venv/bin/activate
 export APPHOME="$(dirname $SRC_ROOT)"
 export PYTHONPATH="$SRC_ROOT"
 cd $APPHOME/nupredictor
-./nunetwork.py --server binarycapital.io --port 80 --create --magic 400 --username mellertson --password Outee411
+./nunetwork.py --server example.com --port 80 --create --magic 400 --username my_username --password super_secret_password
