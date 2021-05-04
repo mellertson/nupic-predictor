@@ -1,6 +1,6 @@
 ###############################################################################
 # api_server
-FROM python:2.7.16-buster
+FROM python:2.7.18-buster
 
 # setup aliases for bash
 RUN echo 'alias c="clear"' >> /root/.bashrc
