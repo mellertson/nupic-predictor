@@ -1358,6 +1358,22 @@ class NupicPredictorv2(t.Thread):
 		else:
 			return True
 
+	@property
+	def model_save_dir_fq(self):
+		""" Get the directory where the Nupic model should be saved into. """
+		model_base_save_dir = os.environ.get(
+			'NUPIC_MODEL_SAVE_DIRECTORY',
+			"/srv/app/src/nupredictor/saved_models"
+		)
+		return os.path.join(model_base_save_dir)
+
+	@property
+	def model_save_filename_fq(self):
+		return os.path.join(
+			self.model_save_dir_fq,
+			'{}.nta'.format(self.model_identity)
+		)
+
 	def build_dir(self, filename):
 		return os.path.join(self.dir, filename)
 
@@ -1665,6 +1681,15 @@ class NupicPredictorv2(t.Thread):
 	def disable_learning(self):
 		disableLearning(self.network, self.model_params)
 
+	def save_nupic_network(self):
+		"""
+		Save the Nupic network to a YAML file in `model_output_files`
+		"""
+		if not os.path.exists(self.model_save_dir_fq):
+			os.makedirs(self.model_save_dir_fq)
+		log.debug('saving Nupic model to: {}'.format(self.model_save_filename_fq))
+		self.network.save(self.model_save_filename_fq)
+
 	def predictor_thread(self):
 		self.network = None
 		while self.is_running:
@@ -1707,6 +1732,8 @@ class NupicPredictorv2(t.Thread):
 
 				# shut down the predictor
 				elif msg['type'] == JSONMessage.TYPE_QUIT:
+					# CURRENT: save the state of the Nupic model.
+					self.save_nupic_network()
 					self.state = 'stopped'
 					self.output_msg_queue.put({
 						'message': '{} {}'.format(
@@ -1813,7 +1840,7 @@ def get_predictors():
 @app.route('/new/predictor/', methods=['POST'])
 def new_predictor():
 	"""
-	Create a new predictor instance to the global `predictors` dictionary.
+	Create a new predictor instance io the global `predictors` dictionary.
 
 	POST form data with this format:
 		'model': The Nupic model as a JSON string not a YAML string.

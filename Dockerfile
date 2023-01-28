@@ -22,8 +22,13 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH="/srv/app/src:/usr/local/lib/python2.7/site-packages"
 ENV FLASK_APP="nupredictor/nunetwork.py"
 ENV FLASK_ENV="development"
-ENV NUPIC_MODEL_DIR="/srv/app/src/nupredictor/model_input_files"
 ENV PROJECT_ROOT_DIR="/srv/app"
+ENV NUPIC_MODEL_DIR="/srv/app/src/nupredictor/model_input_files"
+ARG NUPIC_MODEL_SAVE_DIRECTORY="/srv/app/src/nupredictor/saved_models"
+ENV NUPIC_MODEL_SAVE_DIRECTORY=${NUPIC_MODEL_SAVE_DIRECTORY:-"/srv/app/src/nupredictor/saved_models"}
+
+RUN mkdir -p ${NUPIC_MODEL_SAVE_DIRECTORY}
+
 
 # copy project code files into docker image
 WORKDIR "/srv/app/src"

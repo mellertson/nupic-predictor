@@ -11,6 +11,8 @@ services:
         build:
             context: ./
             dockerfile: Dockerfile
+            args:
+                NUPIC_MODEL_SAVE_DIRECTORY: "/srv/app/src/nupredictor/saved_models"
         networks:
             cn_front:
                 aliases:
@@ -22,3 +24,8 @@ services:
             - .dev.env
         ports:
             - "5000:5000"
+        volumes:
+            - nupic_models:/srv/app/src/nupredictor/saved_models
+
+volumes:
+    nupic_models:
