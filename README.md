@@ -13,14 +13,27 @@ When launched on its on, this Docker container will only bring up a REST API
 interface, but will not instatiate nor run any machine learning models.  To
 instantiate and run models you must make calls to the REST API.
 
-# Building And Running The Docker Container
+# Building The Docker Container
 
-Because, Docker Compose is used you can build and run the container by 
+Because, Docker Compose is used you can build the container by 
 executing the following in a terminal.
 
 ```shell script
 docker-compose build
-docker-compse up
+```
+
+# Deploying on JONIN (production)
+
+To deploy the Nupic Predictor REST API executing the following on a Docker
+Swarm manager node.
+
+```shell script
+docker stack deploy -c stack.jonin.yaml --with-registry-auth bamm-nupic-predictor
 ```
 
 Once launched the REST API should be available at http://localhost:5000.
+
+
+
+
+

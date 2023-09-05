@@ -1,31 +1,14 @@
 version: "3.8"
-networks:
-    cn_public:
-    cn_front:
-    cn_back:
 
 services:
 
     nupic_predictor:
-        image: nupic_predictor:latest
+        image: registry.cybertron.ninja/nupic_predictor:1.0
         build:
             context: ./
             dockerfile: Dockerfile
             args:
                 NUPIC_MODEL_SAVE_DIRECTORY: "/srv/app/src/nupredictor/saved_models"
-        networks:
-            cn_front:
-                aliases:
-                    - nupic_predictor.cybertron.ninja
-            cn_back:
-                aliases:
-                    - nupic_predictor.cybertron.ninja
-        env_file:
-            - .dev.env
-        ports:
-            - "5000:5000"
-        volumes:
-            - nupic_models:/srv/app/src/nupredictor/saved_models
 
-volumes:
-    nupic_models:
+
+

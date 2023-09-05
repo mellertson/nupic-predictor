@@ -1,0 +1,34 @@
+version: "3.8"
+
+networks:
+    bamm_front:
+    bamm_back:
+
+services:
+
+    api:
+        image: registry.cybertron.ninja/nupic_predictor:1.0
+        deploy:
+            replicas: 1
+            placement:
+                max_replicas_per_node: 1
+        user: '9000:9000'
+        networks:
+            bamm_front:
+                aliases:
+                    - nupic_predictor.bamm.cybertron.ninja
+            bamm_back:
+                aliases:
+                    - nupic_predictor.bamm.cybertron.ninja
+        env_file:
+            - .jonin.env
+        volumes:
+            - /mnt/cn_data/bamm/nupic_models:/srv/app/src/nupredictor/saved_models
+
+
+
+
+
+
+
+

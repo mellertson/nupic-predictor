@@ -1,0 +1,28 @@
+version: "3.8"
+
+networks:
+    bamm_front:
+    bamm_back:
+
+services:
+
+    nupic_predictor:
+        image: registry.cybertron.ninja/nupic_predictor:v1.0
+        networks:
+            bamm_front:
+                aliases:
+                    - nupic_predictor.bamm.cybertron.ninja
+            bamm_back:
+                aliases:
+                    - nupic_predictor.bamm.cybertron.ninja
+        env_file:
+            - .dev.env
+        ports:
+            - "5000:5000"
+        volumes:
+            - nupic_models:/srv/app/src/nupredictor/saved_models
+
+volumes:
+    nupic_models:
+
+

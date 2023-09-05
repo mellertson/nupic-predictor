@@ -25,3 +25,5 @@ echo "Starting up container with the following command: "
 echo "${@}"
 print_line ""
 exec "$@"
+
+
