@@ -52,6 +52,7 @@ COPY ./src/nupredictor ${PROJECT_ROOT_DIR}/src/nupredictor
 RUN rm -rf ${PROJECT_ROOT_DIR}/src/nupredictor/model_output_files/*
 RUN rm -rf ${PROJECT_ROOT_DIR}/src/nupredictor/unit_tests
 COPY ./scripts/* ${PROJECT_ROOT_DIR}/scripts/
+RUN chown -R ${NUPIC_USER}:${NUPIC_GROUP} ${PROJECT_ROOT_DIR}
 
 VOLUME ${NUPIC_MODEL_SAVE_DIRECTORY}
 
