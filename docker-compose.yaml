@@ -3,7 +3,7 @@ version: "3.8"
 services:
 
     nupic_predictor:
-        image: registry.cybertron.ninja/nupic_predictor:1.0
+        image: registry.cybertron.ninja/nupic_predictor:1.1
         build:
             context: ./
             dockerfile: Dockerfile

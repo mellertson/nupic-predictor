@@ -10,7 +10,7 @@ networks:
 services:
 
     api:
-        image: registry.cybertron.ninja/nupic_predictor:1.0
+        image: registry.cybertron.ninja/nupic_predictor:1.1
         deploy:
             replicas: 1
             placement:
