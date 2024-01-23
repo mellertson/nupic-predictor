@@ -19,7 +19,10 @@ Because, Docker Compose is used you can build the container by
 executing the following in a terminal.
 
 ```shell script
-docker-compose build
+export VERSION=1.1 
+VERSION=1.1 docker-compose build && \
+docker push registry.cybertron.ninja/nupic_predictor:${VERSION}
+unset VERSION
 ```
 
 # Deploying the Entire BAMM Stack on JONIN
