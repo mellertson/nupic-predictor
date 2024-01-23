@@ -22,7 +22,15 @@ executing the following in a terminal.
 docker-compose build
 ```
 
-# Deploying on JONIN (production)
+# Deploying the Entire BAMM Stack on JONIN
+
+There are three Docker stacks in the `BAMM` stack, which must be brought up 
+in the following order:
+
+1. nupic-predictor
+    - **NOTE:** This stack provisions the Docker networks for the entire `BAMM` stack.
+2. algo-backend
+3. crypto-trading-gym
 
 To deploy the Nupic Predictor REST API executing the following on a Docker
 Swarm manager node.

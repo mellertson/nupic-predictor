@@ -786,6 +786,7 @@ class JSONMessage(object):
 	TYPE_TRAIN_NUPIC = 'train-Nupic'
 	TYPE_TRAIN_CONFIRMATION = 'training-confirmation'
 	TYPE_QUIT = 'quit'
+	TYPE_SAVE = 'save'
 
 	@classmethod
 	def build(cls, message_type, message):
@@ -1732,14 +1733,20 @@ class NupicPredictorv2(t.Thread):
 
 				# shut down the predictor
 				elif msg['type'] == JSONMessage.TYPE_QUIT:
-					# CURRENT: save the state of the Nupic model.
-					self.save_nupic_network()
 					self.state = 'stopped'
 					self.output_msg_queue.put({
 						'message': '{} {}'.format(
 							self.model_name,
 							'is running' if self.is_running else 'stopped',
 						),
+					})
+
+				# save the predictor's state
+				elif msg['type'] == JSONMessage.TYPE_SAVE:
+					# CURRENT: save the state of the Nupic model.
+					self.save_nupic_network()
+					self.output_msg_queue.put({
+						'message': '{} was saved at'.format(self.model_name),
 					})
 			else:
 				log.error('''"type" key not found in data''')
@@ -1924,6 +1931,24 @@ def start_predictor(id):
 	msg = {
 		'type': JSONMessage.TYPE_HEADER,
 		'data': header_rows,
+	}
+	predictor.command_queue.put(msg)
+	msg = predictor.output_msg_queue.get()
+	msg.update({'success': True})
+	return json.dumps(msg), 200, {'ContentType': 'application/json'}
+
+@app.route('/save/predictor/<id>/', methods=['POST'])
+def save_predictor(id):
+	"""
+	Save the given Nupic predictor.
+
+	:param id: The `model_identity` attribute of the Nupic predictor.
+	:type id: str
+	:return:
+	"""
+	predictor = get_predictor(id)
+	msg = {
+		'type': JSONMessage.TYPE_SAVE,
 	}
 	predictor.command_queue.put(msg)
 	msg = predictor.output_msg_queue.get()
