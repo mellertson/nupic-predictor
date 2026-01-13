@@ -9,6 +9,7 @@ import pandas as pd
 import pytz
 import traceback
 import random, copy
+import sqlite3
 from subprocess import Popen
 from dateutil import parser, tz
 from datetime import datetime, timedelta
@@ -19,9 +20,11 @@ from optparse import OptionParser
 from nupredictor.functions import get_files
 from nupredictor.utilities import parse_time_units
 from socket import getfqdn, gethostname
-from flask import Flask, request
+from flask import Flask, request, g
 import threading as t
 import multiprocessing as mp
+
+
 
 
 __all__ = [
@@ -115,6 +118,31 @@ def error_log_stack(e):
 	# sys.stderr.writelines([''])
 	# sys.stderr.writelines(['Exception: {}'.format(e)])
 	log.error(e, exc_info=True)
+
+
+# Flash database functions
+FLASK_DB_PATH = os.environ.get("FLASK_DB_PATH", "/data/nupic_predictor.db")
+def get_db():
+    if "db" not in g:
+        g.db = sqlite3.connect(FLASK_DB_PATH)
+    return g.db
+
+@app.teardown_appcontext
+def close_db(error):
+    db = g.pop("db", None)
+    if db is not None:
+        db.close()
+
+def init_db():
+    db = get_db()
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS nupic_predictor (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            model_identity TEXT NOT NULL
+        )
+    """)
+    db.commit()
+    return "DB initialized"
 
 
 class StopThread(Exception):
@@ -1305,8 +1333,10 @@ class NupicPredictorv2(t.Thread):
 		self.timeframe_td = DateTimeUtils.string_to_timeframe(self.timeframe)
 		log.debug('{}.timeframe = {}'.format(self.__class__.__name__, self.timeframe))
 		log.debug('{}.timeframe_td = {}'.format(self.__class__.__name__, self.timeframe_td))
-		self.input_filename = '/tmp/{}-{}.csv'.format(
-			self.name, random.randint(1, 999999999))
+		self.input_filename = '{}/{}.csv'.format(
+			os.environ.get('NUPIC_MODEL_SAVE_DIRECTORY'),
+			self.model_identity,
+		)
 		self.input_file = open(self.input_filename, 'w+')
 		self.is_started = t.Event()
 		self.is_started.clear()
@@ -1397,12 +1427,15 @@ class NupicPredictorv2(t.Thread):
 		(options, args) = parser.parse_args()
 		return options, args
 
-	def create_network(self, data_source):
+	def create_network(self, data_source, path=None):
 		"""
 		Create and initialize the Nupic network (a.k.a. model)
 
 		:param data_source: The input data source for the Nupic model
 		:type data_source: FileRecordStream
+
+		:param path: (optional) The fully-qualified path to a saved Nupic Network (*.nta)
+		:type path: str
 
 		:returns: A fully initialized Nupic network (a.k.a. model)
 		:rtype: nupic.engine.Network
@@ -1417,53 +1450,57 @@ class NupicPredictorv2(t.Thread):
 			log.debug('Nupic model params loaded: {}'.format(modelParams))
 			self.model_params = modelParams
 
-		# Create a network that will hold the regions
-		network = Network()
+		if path:
+			# instantiate Nupic Network from a saved model.
+			network = Network(path)
+		else:
+			# Create a network that will hold the regions
+			network = Network()
 
-		################################################################################
-		# Add sensor regions
-		################################################################################
-		# Set the encoder and data source of the sensor region.
-		log.debug('adding "sensor" region to Nupic network')
-		sensorRegion = network.addRegion("sensor", "py.RecordSensor", '{}')
-		sensorRegion.getSelf().encoder = createEncoder(modelParams["sensorParams"]["encoders"])
-		sensorRegion.getSelf().dataSource = data_source
+			################################################################################
+			# Add sensor regions
+			################################################################################
+			# Set the encoder and data source of the sensor region.
+			log.debug('adding "sensor" region to Nupic network')
+			sensorRegion = network.addRegion("sensor", "py.RecordSensor", '{}')
+			sensorRegion.getSelf().encoder = createEncoder(modelParams["sensorParams"]["encoders"])
+			sensorRegion.getSelf().dataSource = data_source
 
-		################################################################################
-		# Synchronize Sensor Region output width with Spatial Pooler input width
-		################################################################################
-		log.debug('synchronizing input width to Nupic model')
-		modelParams["spParams"]["inputWidth"] = sensorRegion.getSelf().encoder.getWidth()
+			################################################################################
+			# Synchronize Sensor Region output width with Spatial Pooler input width
+			################################################################################
+			log.debug('synchronizing input width to Nupic model')
+			modelParams["spParams"]["inputWidth"] = sensorRegion.getSelf().encoder.getWidth()
 
-		################################################################################
-		# Add SpacialPooling and TemporalMemory regions
-		################################################################################
-		network.addRegion("SP", "py.SPRegion", json.dumps(modelParams["spParams"]))
-		network.addRegion("TM", "py.TMRegion", json.dumps(modelParams["tmParams"]))
+			################################################################################
+			# Add SpacialPooling and TemporalMemory regions
+			################################################################################
+			network.addRegion("SP", "py.SPRegion", json.dumps(modelParams["spParams"]))
+			network.addRegion("TM", "py.TMRegion", json.dumps(modelParams["tmParams"]))
 
-		################################################################################
-		# Classifier Regions
-		################################################################################
-		for regionName, region in modelParams['classifiers'].items():
-			log.debug('adding classifier region({}) with classifier params: {}'.format(
-				regionName, region
-			))
-			# Add the classifier region
-			regionType = "py.%s" % region.pop("regionType")
-			network.addRegion(regionName, regionType, json.dumps(region))
+			################################################################################
+			# Classifier Regions
+			################################################################################
+			for regionName, region in modelParams['classifiers'].items():
+				log.debug('adding classifier region({}) with classifier params: {}'.format(
+					regionName, region
+				))
+				# Add the classifier region
+				regionType = "py.%s" % region.pop("regionType")
+				network.addRegion(regionName, regionType, json.dumps(region))
 
-		################################################################################
-		# Link the Regions
-		################################################################################
-		for regionName, region in modelParams['classifiers'].items():
-			createSensorToClassifierLinks(network, "sensor", regionName)
-		createDataOutLink(network, "sensor", "SP")
-		createFeedForwardLink(network, "SP", "TM")
-		for regionName, region in modelParams['classifiers'].items():
-			createFeedForwardLink(network, "TM", regionName)
-		# Reset links are optional, since the sensor region does not send resets
-		createResetLink(network, "sensor", "SP")
-		createResetLink(network, "sensor", "TM")
+			################################################################################
+			# Link the Regions
+			################################################################################
+			for regionName, region in modelParams['classifiers'].items():
+				createSensorToClassifierLinks(network, "sensor", regionName)
+			createDataOutLink(network, "sensor", "SP")
+			createFeedForwardLink(network, "SP", "TM")
+			for regionName, region in modelParams['classifiers'].items():
+				createFeedForwardLink(network, "TM", regionName)
+			# Reset links are optional, since the sensor region does not send resets
+			createResetLink(network, "sensor", "SP")
+			createResetLink(network, "sensor", "TM")
 
 		################################################################################
 		# Initialize the Network
@@ -1707,7 +1744,16 @@ class NupicPredictorv2(t.Thread):
 
 					try:
 						data_source = FileRecordStream(self.input_filename)
-						self.network = self.create_network(data_source)
+						# TODO: test if self.model_save_filename_fq exists
+						if os.path.exists(self.model_save_filename_fq):
+							log.debug('Loading Nupic Network from existing model: {}'.format(self.model_save_filename_fq))
+							self.network = self.create_network(
+								data_source,
+								self.model_save_filename_fq,
+							)
+						else:
+							log.debug('Creating new Nupic Network.')
+							self.network = self.create_network(data_source)
 						self.network = self.post_initialization(self.network)
 						self.output_msg_queue.put({
 							'message': '{} initialized.'.format(self.model_name),
@@ -1827,7 +1873,7 @@ class NupicPredictorv2(t.Thread):
 		prediction = self.output_msg_queue.get()
 		return prediction
 
-
+# TODO: read all saved Nupic models from the hard disk into `predictors`
 predictors = {}
 
 def get_predictor(id):
@@ -1871,8 +1917,7 @@ def new_predictor():
 	log.debug('predicted_field = {}'.format(predicted_field))
 	log.debug('timeframe = {}'.format(timeframe))
 	count = len(predictors) + 1
-	model_identity = '{}-{}-{}-{}-{}'.format(
-		count,
+	model_identity = '{}-{}-{}-{}'.format(
 		exchange,
 		market,
 		predicted_field,

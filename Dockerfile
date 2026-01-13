@@ -28,6 +28,7 @@ ${NUPIC_USER}
 # set ENV defaults, which can be overriden at run-time.
 ENV PYTHONUNBUFFERED=1
 ENV FLASK_APP="nupredictor/nunetwork.py"
+ENV FLASK_DB_PATH=/data/nupic_predictor.db
 ENV FLASK_ENV="development"
 ARG PROJECT_ROOT_DIR=/srv/app
 ENV PROJECT_ROOT_DIR=${PROJECT_ROOT_DIR:-/srv/app}
@@ -55,6 +56,8 @@ COPY ./scripts/* ${PROJECT_ROOT_DIR}/scripts/
 RUN chown -R ${NUPIC_USER}:${NUPIC_GROUP} ${PROJECT_ROOT_DIR}
 
 VOLUME ${NUPIC_MODEL_SAVE_DIRECTORY}
+# Directory where SQLite DB will live
+VOLUME ["/data"]
 
 USER ${NUPIC_USER}
 

@@ -27,6 +27,9 @@ services:
             - .jonin.env
         volumes:
             - /mnt/cn_data/bamm/nupic_models:/srv/app/src/nupredictor/saved_models
+            - /mnt/cn_data/bamm/nupic_database:/data
+        ports:
+            - "5000:5000"
 
 
 
